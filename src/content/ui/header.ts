@@ -1,6 +1,7 @@
 import { every } from '../sched';
 import { loadSettings, onSettingsChange, type Settings } from '../../shared/settings';
 import { account, dynamicUpdates, resetDynamicBaseline, unreadTotal } from '../api/account';
+import { onMsgRead } from '../api/msg';
 import { h, icon, ICONS, setMarkup } from './dom';
 import { createExpandableTabs, type TabItem, type TabSpec } from './expandable-tabs';
 import { createUserMenu } from './user-menu';
@@ -62,6 +63,11 @@ export function createHeader(o: { tabs: TabItem[]; onTheme: () => void; onSearch
   }
 
   const tabsNav = createExpandableTabs(o.tabs);
+  // 点顶栏「消息」或悬停面板里的分类行都会开新标签页：先乐观清掉本页角标，
+  // 消息页读完列表后广播 margin:msg-read，onMsgRead 再按服务端真值对齐（含误清纠正）
+  addEventListener('click', (e) => {
+    if (e.composedPath().some((n) => n instanceof HTMLAnchorElement && /^https:\/\/message\.bilibili\.com\//.test(n.href))) tabsNav.badge('msg', 0);
+  }, true);
   // 直播 / 消息 / 动态 / 历史 / 收藏 / 稍后：停留 1.5 秒弹出悬停列表
   let msgPop: PopHandle | null = null;
   const popHandles: PopHandle[] = [];
@@ -112,8 +118,8 @@ export function createHeader(o: { tabs: TabItem[]; onTheme: () => void; onSearch
     // 未读角标：页面可见时每 2 分钟问一次；切回标签页时立即刷新。
     // 消息提醒同时管动态：关闭后消息和动态的角标都不再轮询。
     let polled = 0;
-    const pollMsg = () => {
-      if (!msgOn || document.hidden) return;
+    const pollMsg = (force = false) => {
+      if (!msgOn || (document.hidden && !force)) return;
       polled = Date.now();
       unreadTotal().then((n) => tabsNav.badge('msg', n)).catch(() => {});
     };
@@ -125,6 +131,8 @@ export function createHeader(o: { tabs: TabItem[]; onTheme: () => void; onSearch
     const poll = () => { pollDyn(); pollMsg(); };
     poll();
     every(120_000, poll);
+    // 消息在别的标签页被读掉：立刻按服务端真值对齐（隐藏页也更新，切回来不会挂着旧数字）
+    onMsgRead(() => pollMsg(true));
     // 切回标签页时刷新一次（30 秒内刚问过就不重复问）
     document.addEventListener('visibilitychange', () => { if (Date.now() - polled > 30_000) poll(); });
   }).catch(() => {});

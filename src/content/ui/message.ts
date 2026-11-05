@@ -1,6 +1,6 @@
 import type { Settings } from '../../shared/settings';
 import { nav } from '../api/http';
-import { ackSession, ats, fillPeople, likes, messages, readAllSessions, replies, sendText, sessions, system, systemRead, unread, type MsgCard, type Notice, type Page, type Session } from '../api/msg';
+import { ackSession, ats, fillPeople, likes, markMsgRead, messages, readAllSessions, replies, sendText, sessions, system, systemRead, unread, type MsgCard, type Notice, type Page, type Session } from '../api/msg';
 import { dayBucket, fmtAgo, h, icon, ICONS, svg } from './dom';
 import { openLightbox } from './lightbox';
 import { toast } from './controls';
@@ -175,7 +175,9 @@ export class MessageApp {
     const cur = el.textContent === '99+' ? 100 : Number(el.textContent) || 0;
     const n = Math.max(0, f(cur));
     el.textContent = n ? (n > 99 ? '99+' : String(n)) : '';
-    dispatchEvent(new CustomEvent('margin:unread'));
+    // 走跨标签页广播（顶栏消息入口是新标签页，页内事件传不过去），所有页面的角标按服务端真值对齐；
+    // 不再派发无 total 的 margin:unread，消掉 600ms 重拉与服务端已读落库之间的竞态
+    markMsgRead();
   }
 
   private go(v: View): void {

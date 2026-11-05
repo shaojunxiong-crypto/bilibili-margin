@@ -2,6 +2,28 @@
 const https = (u: unknown) => String(u ?? '').replace(/^\/\//, 'https://').replace(/^http:/, 'https:');
 const BASE = { build: '0', mobi_app: 'web' };
 
+/** 跨标签页「消息已读」信号。顶栏消息入口是 target=_blank，页内 CustomEvent 传不过去，
+ *  消息在另一个标签页被读掉后，原页面的角标只能等 2 分钟轮询——借 chrome.storage.onChanged 广播。 */
+const MSG_READ_KEY = 'margin:msg-read';
+let lastMark = 0;
+/** 消息页有未读被清零时调用（10 秒节流，轮询/首屏补拉不会反复写） */
+export function markMsgRead(): void {
+  const now = Date.now();
+  if (now - lastMark < 10_000) return;
+  lastMark = now;
+  void chrome.storage.local.set({ [MSG_READ_KEY]: now + Math.random() }).catch(() => {});
+}
+/** 收到已读信号：立刻重拉一次，1.5 秒后再拉一次（B 站服务端落库有延迟，两次覆盖竞态） */
+export function onMsgRead(cb: () => void): void {
+  let t = 0;
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes[MSG_READ_KEY]) return;
+    clearTimeout(t);
+    cb();
+    t = window.setTimeout(cb, 1500);
+  });
+}
+
 async function get<T>(url: string, params: Record<string, string | number> = {}): Promise<T> {
   // _t 时间戳打散 URL：实测 msgfeed 的响应会被某层按 URL 为 key 的缓存（TTL 约半小时）冻住，
   // cache: 'no-cache' 的重新验证会被 304 糊弄回去，同 URL 21 秒内两次都吐同一份 29 分钟前的旧数据。
