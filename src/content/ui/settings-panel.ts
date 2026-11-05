@@ -114,7 +114,7 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
   cityAuto.addEventListener('click', () => { clearLoc(); paintCity(); say('天气改回按 IP 自动定位'); });
   paintCity();
   const cityBox = h('div', { class: 'city-box' }, h('div', { class: 'city-row' }, cityIn, cityAuto), cityList);
-  const cols = segmented<string>([['0', '自动'], ['4', '4 个'], ['5', '5 个']], String(s0.cols), (v) => save({ cols: Number(v) as 0 | 4 | 5 }));
+  const cols = segmented<string>([['0', '自动'], ['4', '4 个'], ['5', '5 个'], ['6', '6 个']], String(s0.cols), (v) => save({ cols: Number(v) as 0 | 4 | 5 | 6 }));
   const fontS = segmented<'serif' | 'sans'>([['serif', '衬线'], ['sans', '无衬线']], s0.titleFont, (v) => save({ titleFont: v }));
   const monoT = toggle(s0.monoNum, '数字用等宽字体', (v) => save({ monoNum: v }));
   const fontIn = h('input', { type: 'text', class: 'city-in font-in', value: s0.bodyFont, placeholder: '比如 微软雅黑、HarmonyOS Sans SC', 'aria-label': '自定义字体', spellcheck: 'false' }) as HTMLInputElement;
@@ -204,7 +204,6 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
   const spdK = toggle(s0.speedKeys, '倍速快捷键', (v) => save({ speedKeys: v }));
   const treeT = toggle(s0.replyTree, '楼中楼对话树', (v) => save({ replyTree: v }));
   const msgT = toggle(s0.msgRemind, '消息提醒', (v) => save({ msgRemind: v }));
-  const ytT = toggle(s0.ytHome, 'YouTube 风格', (v) => save({ ytHome: v }));
   const tabRefreshT = toggle(s0.tabRefresh, '点击分类标签刷新列表', (v) => save({ tabRefresh: v }));
 
   const kw = chipInput(s0.filters.keywords, '输入关键词，回车添加；/正则/ 也可以', (v) => save({ filters: { ...get().filters, keywords: v } }));
@@ -280,6 +279,9 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
     const url = await compressImage(f);
     await chrome.storage.local.set({ [BG_IMAGE_KEY]: url });
     save({ bg: { ...get().bg, mode: 'image' } });
+    // 已经是 image 模式时设置对象没变，storage.onChanged 不会触发，背景层得靠这个事件重读（#31）
+    dispatchEvent(new CustomEvent('margin:bg-image'));
+    say('背景图已更新');
   });
   const upload = h('button', { type: 'button', class: 'ghost small', onclick: () => file.click() }, icon(ICONS.image), h('span', {}, '上传图片'));
 
@@ -396,7 +398,6 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
       row('封面悬停预览', '鼠标停留半秒后静音播放', preview),
       row('减少动画', '暂停背景、天气和悬停动画，并减少界面过渡；系统减少动态效果始终生效', reduceM),
       row('其他页面重设计', '播放页、搜索页、空间、动态等，只换外观不改功能', watch),
-      row('YouTube 风格', '首页、播放页、空间、消息等页面借用 YouTube 布局；配色、主题和背景不变', ytT),
       drawer('字体与缩放', () => { const st = get(); return [st.titleFont === 'sans' ? '无衬线标题' : '衬线标题', st.bodyFont || '', st.zoom !== 100 ? `${st.zoom}%` : ''].filter(Boolean).join(' · '); },
         block('标题字体', '页面标题和大号文字用衬线（宋体）还是无衬线（黑体）', fontS),
         block('正文字体', '填本机已经装好的字体名；标题选「无衬线」时标题也用它。留空 = 映间默认', fontBox),
@@ -405,7 +406,7 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
         block('评论字号', '视频和动态评论区的正文大小（px）', cfsS)),
       drawer('布局与细节', () => { const st = get(); return [st.cols ? `每行 ${st.cols} 个` : '每行自动', st.radius === 0 ? '直角' : st.radius === 50 ? '小圆角' : st.radius === 150 ? '大圆角' : ''].filter(Boolean).join(' · '); },
         block('圆角', '卡片、按钮、面板的圆角大小；头像这类圆形不受影响', radS),
-        block('首页每行视频', '自动按窗口宽度排 6–8 个；也可以固定 4 个或 5 个，卡片更大', cols),
+        block('首页每行视频', '自动按窗口宽度排 6–8 个；也可以固定 4 / 5 / 6 个，卡片更大', cols),
         row('开场动画', '每次打开浏览器后第一次进首页播放，点一下可跳过', intro),
         row('收藏夹直接展开', '点收藏夹直接列出全部视频，不再先弹出最近 4 个', favD),
         row('账号卡片可拖拽', '关掉后头像下的卡片固定挂着，不能甩动，点一下仍可翻面', idD))),

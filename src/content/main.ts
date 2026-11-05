@@ -160,6 +160,8 @@ async function startWatch(kind: SkinKind = 'watch'): Promise<void> {
  */
 function spaceNative(): void {
   document.documentElement.classList.add('margin-space-native');
+  // 原生空间子页：拦截收藏夹 / 历史 / 稍后再看的入口，改成开映间抽屉（#52 后续）
+  void import('./space-hooks').then((mod) => mod.installSpaceHooks()).catch(() => { /* 抽屉可缺省 */ });
   let last = location.href;
   const check = (href: string) => {
     if (href === last) return;

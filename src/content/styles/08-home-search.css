@@ -425,8 +425,9 @@
 /* 首页每行视频数（B 站评论建议）：自动 = 按窗口宽度 6–8 列；也可固定 4 / 5 列，窄窗口再往下收 */
 .app.home[data-cols="4"] { --cols: 4; }
 .app.home[data-cols="5"] { --cols: 5; }
-@media (max-width: 1099px) { .app.home[data-cols="5"] { --cols: 4; } }
-@media (max-width: 900px) { .app.home:is([data-cols="4"], [data-cols="5"]) { --cols: 3; } }
+.app.home[data-cols="6"] { --cols: 6; }
+@media (max-width: 1099px) { .app.home[data-cols="5"] { --cols: 4; } .app.home[data-cols="6"] { --cols: 5; } }
+@media (max-width: 900px) { .app.home:is([data-cols="4"], [data-cols="5"], [data-cols="6"]) { --cols: 3; } }
 
 /* ===== v0.43 卡顿 ===== */
 /* 关着的侧板（设置 / 收藏夹）不参与合成，也不再在屏幕外算毛玻璃 */

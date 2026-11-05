@@ -48,7 +48,6 @@ export interface Settings {
   /** 首页开场动画（每次打开浏览器后首次进入首页播放一次） */
   intro: boolean;
   /** YouTube 风格首页（可选，默认关）：只借布局结构，配色和主题不变；只影响首页 */
-  ytHome: boolean;
   /** 首页顶部「B 站足迹」热力图（关掉只是不显示，后台照样记录） */
   footprint: boolean;
   /** 首页顶部天气卡（关掉就不请求天气和定位） */
@@ -64,7 +63,7 @@ export interface Settings {
   /** v0.49：楼中楼按回复关系缩进成对话树（参考 BewlyCat，B 站评论建议） */
   replyTree: boolean;
   /** 首页每行几个视频：0 = 按窗口宽度自动，4 / 5 = 固定 */
-  cols: 0 | 4 | 5;
+  cols: 0 | 4 | 5 | 6;
   /** 点击「推荐 / 热门 / 关注老片」分类标签刷新列表 */
   tabRefresh: boolean;
   /** 首页隐藏的部件；空 = 全部显示 */
@@ -130,7 +129,6 @@ export const DEFAULTS: Settings = {
   hoverPreview: true,
   watch: true,
   intro: true,
-  ytHome: false,
   footprint: true,
   weather: true,
   favDirect: false,
@@ -208,7 +206,6 @@ function merge(raw: Partial<Settings> | undefined): Settings {
     homeOrder: normalizeHomeOrder(r.homeOrder),
     appFeed: r.appFeed === true,
     rerank: r.rerank === true,
-    ytHome: r.ytHome === true,
     radius: r.radius === 0 || r.radius === 50 || r.radius === 150 ? r.radius : 100,
     commentSize: r.commentSize === 15 || r.commentSize === 16 || r.commentSize === 17 ? r.commentSize : 14,
     headHover: r.headHover !== false,
@@ -241,9 +238,9 @@ export function sanitizeSettings(raw: unknown): Settings | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const r = raw as Record<string, unknown>;
   const out: Partial<Settings> = {};
-  const bool = (k: 'enabled' | 'hoverPreview' | 'watch' | 'intro' | 'footprint' | 'weather' | 'favDirect' | 'autoWeb' | 'webScroll' | 'speedKeys' | 'replyTree' | 'idDrag' | 'monoNum' | 'reduceMotion' | 'wide' | 'hideAds' | 'msgRemind' | 'appFeed' | 'rerank' | 'ytHome' | 'headHover' | 'tabRefresh') => { if (typeof r[k] === 'boolean') out[k] = r[k] as boolean; };
+  const bool = (k: 'enabled' | 'hoverPreview' | 'watch' | 'intro' | 'footprint' | 'weather' | 'favDirect' | 'autoWeb' | 'webScroll' | 'speedKeys' | 'replyTree' | 'idDrag' | 'monoNum' | 'reduceMotion' | 'wide' | 'hideAds' | 'msgRemind' | 'appFeed' | 'rerank' | 'headHover' | 'tabRefresh') => { if (typeof r[k] === 'boolean') out[k] = r[k] as boolean; };
   bool('enabled'); bool('hoverPreview'); bool('watch'); bool('intro'); bool('footprint'); bool('weather'); bool('favDirect'); bool('autoWeb'); bool('webScroll'); bool('speedKeys'); bool('replyTree'); bool('idDrag'); bool('monoNum');
-  bool('reduceMotion'); bool('wide'); bool('hideAds'); bool('msgRemind'); bool('appFeed'); bool('rerank'); bool('ytHome'); bool('headHover'); bool('tabRefresh');
+  bool('reduceMotion'); bool('wide'); bool('hideAds'); bool('msgRemind'); bool('appFeed'); bool('rerank'); bool('headHover'); bool('tabRefresh');
   if (r.radius === 0 || r.radius === 50 || r.radius === 100 || r.radius === 150) out.radius = r.radius;
   if (r.commentSize === 14 || r.commentSize === 15 || r.commentSize === 16 || r.commentSize === 17) out.commentSize = r.commentSize;
   if (typeof r.bodyFont === 'string') out.bodyFont = cleanFont(r.bodyFont);
@@ -253,7 +250,7 @@ export function sanitizeSettings(raw: unknown): Settings | null {
   if (typeof r.cdn === 'string') out.cdn = cleanHost(r.cdn);
   if (r.zoom === 100 || r.zoom === 110 || r.zoom === 120) out.zoom = r.zoom;
   if (r.titleFont === 'serif' || r.titleFont === 'sans') out.titleFont = r.titleFont;
-  if (r.cols === 0 || r.cols === 4 || r.cols === 5) out.cols = r.cols;
+  if (r.cols === 0 || r.cols === 4 || r.cols === 5 || r.cols === 6) out.cols = r.cols;
   if (Array.isArray(r.homeHide)) out.homeHide = HOME_BITS.filter((b) => (r.homeHide as unknown[]).includes(b));
   if (Array.isArray(r.homeOrder)) out.homeOrder = normalizeHomeOrder(r.homeOrder);
   if (r.theme === 'auto' || r.theme === 'light' || r.theme === 'dark') out.theme = r.theme;

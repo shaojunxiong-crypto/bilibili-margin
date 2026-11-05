@@ -6,7 +6,6 @@ import { toast } from './controls';
 import { addWatchLater } from '../api/search';
 import { createFavorites } from './favorites';
 import { createHeader, type Header, SITE_LINKS } from './header';
-import { createYtHeader, type YtHeader } from './yt/header';
 import { attachPreview } from './preview';
 import { createSettingsPanel, type SettingsPanel } from './settings-panel';
 import type { Sheet } from './sheet';
@@ -19,8 +18,6 @@ import { createLaterDrawer } from './drawer';
 import { createScrollRuler } from './scroll-ruler';
 import { skinComments } from './comment-skin';
 import css from '../styles/index';
-import ytCss from '../yt.css?inline';
-import ytWatchCss from '../yt-watch.css?inline';
 import { BackgroundLayer } from '../bg/background';
 import { startTriple } from './triple';
 import { startWatchCard } from './watch-card';
@@ -40,8 +37,7 @@ export class WatchSkin {
   private bg = new BackgroundLayer();
   private bgApp: HTMLElement;
   private app: HTMLElement;
-  private head: Header | YtHeader;
-  private yt: boolean;
+  private head: Header;
   private panel: SettingsPanel;
   private fav: Sheet;
   private screenSync?: () => void;
@@ -52,8 +48,6 @@ export class WatchSkin {
   constructor(private settings: Settings, private kind: SkinKind = 'watch') {
     const de = document.documentElement;
     const isWatch = kind === 'watch';
-    this.yt = settings.ytHome;
-    if (this.yt) de.classList.add('margin-yt');
     // 全局换皮样式（watch.css + pages.css）由入口脚本在 document_start 挂上（见 main.ts skinStyle），这里只补类名
     de.classList.add('margin-skin', `margin-${kind}`);
 
@@ -69,9 +63,8 @@ export class WatchSkin {
     const root = this.host.attachShadow({ mode: 'open' });
     guardTyping(this.host);
     root.append(h('style', {}, css));
-    if (this.yt) root.append(h('style', {}, ytCss));
     // 搜索页本身有大号搜索框，顶栏那个就不再重复（Ctrl+K / / 仍可唤出命令面板）
-    if (kind === 'search') root.append(h('style', {}, this.yt ? '.app.yt.wt .yt-search { visibility: hidden; pointer-events: none; }' : '.top .search { visibility: hidden; pointer-events: none; }'));
+    if (kind === 'search') root.append(h('style', {}, '.top .search { visibility: hidden; pointer-events: none; }'));
 
     this.filter = new FilterRuntime(settings);
     this.panel = createSettingsPanel(() => this.settings, () => this.bg.shader);
@@ -98,75 +91,49 @@ export class WatchSkin {
       { id: 'off', title: '本次回到 B 站原版', cat: '操作', icon: ICONS.exit, keys: ['原版'], run: () => { sessionStorage.setItem('margin:off', '1'); location.reload(); } },
     ]);
     const cm = createContextMenu();
-    this.head = this.yt
-      ? createYtHeader({
-          onTheme: () => this.toggleTheme(),
-          onMenu: () => {},
-          onSearch: (q) => palette.open(q),
-          onSettings: () => this.panel.sheet.open(),
-          msgRemind: () => this.settings.msgRemind,
-        })
-      : createHeader({
-          onTheme: () => this.toggleTheme(),
-          onSearch: (q) => palette.open(q),
-          onSettings: () => this.panel.sheet.open(),
-          msgRemind: () => this.settings.msgRemind,
-          filter: this.filter,
-          tabs: [
-            ...SITE_LINKS,
-            'separator',
-            { title: '收藏', icon: ICONS.fav, run: () => this.fav.open() },
-            { title: '稍后', icon: ICONS.later, run: () => later.open() },
-            { title: '原版', icon: ICONS.exit, run: () => { sessionStorage.setItem('margin:off', '1'); location.reload(); } },
-          ],
-        });
+    this.head = createHeader({
+      onTheme: () => this.toggleTheme(),
+      onSearch: (q) => palette.open(q),
+      msgRemind: () => this.settings.msgRemind,
+      filter: this.filter,
+      tabs: [
+        ...SITE_LINKS,
+        'separator',
+        { title: '收藏', icon: ICONS.fav, run: () => this.fav.open() },
+        { title: '稍后', icon: ICONS.later, run: () => later.open() },
+        { title: '设置', icon: ICONS.gear, run: () => this.panel.sheet.open() },
+        { title: '原版', icon: ICONS.exit, run: () => { sessionStorage.setItem('margin:off', '1'); location.reload(); } },
+      ],
+    });
     const click = (sel: string) => (document.querySelector(sel) as HTMLElement | null)?.click();
-    const quick = isWatch && !this.yt ? createFloatingMenu([
+    const quick = isWatch ? createFloatingMenu([
       { label: '回到顶部', en: 'Back to Top', run: () => scrollTo({ top: 0, behavior: 'smooth' }) },
       { label: '看评论', en: 'Comments', run: () => document.querySelector('#commentapp, bili-comments, .comment-container')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
       { label: '网页全屏', en: 'Web Fullscreen', run: () => click('.bpx-player-ctrl-web') },
       { label: '宽屏模式', en: 'Wide Mode', run: () => click('.bpx-player-ctrl-wide') },
       { label: '收藏夹', en: 'Favorites', run: () => this.fav.open() },
     ]) : null;
-    this.app = h('div', { class: `app wt${this.yt ? ' yt' : ''}`, 'data-bg': 'off' }, this.head.el, quick?.el ?? null, this.yt ? null : createScrollRuler(), this.panel.sheet.el, this.fav.el, palette.el, later.el, cm.el);
+    this.app = h('div', { class: 'app wt', 'data-bg': 'off' }, this.head.el, quick?.el ?? null, createScrollRuler(), this.panel.sheet.el, this.fav.el, palette.el, later.el, cm.el);
     // 侧板开着时背景定格：侧板的毛玻璃（backdrop-filter）只有在底下画面变化时才需要每帧重算（v0.45）
     this.app.addEventListener('margin:sheet', () => { const on = !!this.app.querySelector('.sheet-layer[data-open="true"]'); this.app.classList.toggle('sheeted', on); this.bg.hold('sheet', on); });
     root.append(this.app);
     if (isWatch) skinComments();
-    if ('glass' in this.head) {
-      const lg = filtersIn(root);
-      this.head.glass.forEach((g) => attachGlass(g, lg));
-      attachGlass(this.head.thumb, lg, { blur: 2, strength: 0.4 });
-    }
+    const lg = filtersIn(root);
+    this.head.glass.forEach((g) => attachGlass(g, lg));
+    attachGlass(this.head.thumb, lg, { blur: 2, strength: 0.4 });
     const favGrid = this.fav.el.querySelector('.fav-grid') as HTMLElement | null;
     if (favGrid) bindCardMenu(favGrid, cm, () => this.app, { onLater: () => later.open() });
     de.append(this.host);
-    if (this.yt) {
-      let st = document.getElementById('margin-yt-watch-css') as HTMLStyleElement | null;
-      if (!st) { st = document.createElement('style'); st.id = 'margin-yt-watch-css'; de.append(st); }
-      st.textContent = ytWatchCss;
-      // YouTube 把频道信息放在标题下面；B 站把它放在右栏顶部，这里周期性搬回左栏
-      // （Vue 偶尔会重渲染右栏，所以不能只搬一次）
-      const placeUp = () => {
-        const left = document.querySelector('.left-container');
-        const up = document.querySelector('.up-panel-container');
-        if (!left || !up || up.parentElement === left) return;
-        left.insertBefore(up, left.querySelector('.video-toolbar-container') ?? null);
-      };
-      placeUp();
-      every(1500, placeUp);
-    }
 
     this.applyTheme(false);
     this.media.addEventListener('change', () => this.applyTheme(false));
     // 搜索页没有播放器；普通视频、番剧、列表等换皮页都运行播放器相关设置
     if (kind !== 'search') this.watchScreen();
-    if (isWatch) { startTriple(); podProgress(); if (!this.yt) startWatchCard(); }
+    if (isWatch) { startTriple(); podProgress(); startWatchCard(); }
   }
 
   update(s: Settings): void {
     const prev = this.settings;
-    if (prev.ytHome !== s.ytHome) { location.reload(); return; }
     this.settings = s;
     this.filter.update(s);
     if (prev.reduceMotion !== s.reduceMotion || prev.theme !== s.theme || JSON.stringify(prev.bg) !== JSON.stringify(s.bg)) this.applyTheme(false);
@@ -191,8 +158,7 @@ export class WatchSkin {
     this.bgApp.dataset.theme = t;
     this.app.classList.toggle('margin-reduce', this.settings.reduceMotion);
     this.bgApp.classList.toggle('margin-reduce', this.settings.reduceMotion);
-    if (this.yt) (this.head as YtHeader).setTheme(t);
-    else (this.head as Header).sunMoon.set(t, animate && !reducedMotion());
+    this.head.sunMoon.set(t, animate && !reducedMotion());
     const mode = this.settings.bg.mode;
     document.documentElement.classList.toggle('margin-has-bg', mode !== 'off');
     this.bg.apply(this.settings.bg, t, this.settings.palette).then(() => {

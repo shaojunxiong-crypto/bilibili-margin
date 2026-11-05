@@ -13,6 +13,8 @@ jobs:
       EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
       EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
       EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+      AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+      AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -52,3 +54,12 @@ jobs:
       - name: Clear Edge pending mark
         if: steps.edge.outputs.status == 'submitted'
         run: git push origin :refs/tags/edge-pending || true
+      # Firefox 附加组件商店：用 AMO API 密钥提交新版本（上架渠道，附源码包）。
+      # 不等审核结果（approval-timeout 0），审核通过后已安装的 Firefox 自动更新。
+      - name: Publish to Firefox Add-ons
+        if: startsWith(github.ref, 'refs/tags/v') && env.AMO_JWT_SECRET != ''
+        run: |
+          git archive --format=zip -o margin-source.zip HEAD
+          npx --yes web-ext@8 sign --source-dir dist-firefox --channel listed \
+            --upload-source-code margin-source.zip --approval-timeout 0 \
+            --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET" --artifacts-dir web-ext-artifacts

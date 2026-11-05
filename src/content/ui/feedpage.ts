@@ -1,6 +1,7 @@
 import { attachPreview } from './preview';
 import type { Settings } from '../../shared/settings';
 import { nav } from '../api/http';
+import { followings } from '../api/dyn';
 import { account, accountStat } from '../api/account';
 import { followFeed, portal, searchFollowing, type FeedType, type LiveUp, type Up } from '../api/dyn';
 import { hotSearch } from '../api/search';
@@ -83,8 +84,53 @@ export class FeedApp {
       }
       this.renderMe(left);
       portal().then((p) => { this.renderUps(p.ups); this.renderLive(left, p.live, p.liveCount); }).catch(() => { /* 头像条可缺省 */ });
+      void this.renderFollowList(left);
       this.load();
     }).catch(() => this.load());
+  }
+
+  /** #16：左侧「关注」列表——比头像条能装更多人，点一行就把动态流切成该 UP */
+  private async renderFollowList(left: HTMLElement): Promise<void> {
+    const a = await account().catch(() => null);
+    if (!a) return;
+    const list = h('div', { style: 'display:flex;flex-direction:column;gap:2px;max-height:46vh;overflow:auto' });
+    const more = h('button', {
+      type: 'button', class: 'ghost',
+      style: 'margin-top:6px;width:100%;background:none;border:0;color:inherit;opacity:.65;cursor:pointer;font:inherit;font-size:12px;padding:6px',
+    }, '加载更多');
+    const head = h('div', { style: 'display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px' },
+      h('h3', { style: 'margin:0;font-size:13px;font-weight:600' }, '关注'),
+      h('a', { class: 'ghost', href: `https://space.bilibili.com/${a.mid}/fans/follow`, target: '_blank', rel: 'noopener', style: 'font-size:11px;opacity:.6;text-decoration:none;color:inherit' }, '全部'));
+    const box = h('section', { class: 'fd-card fd-follows', style: 'padding:12px' }, head, list, more);
+    left.append(box);
+
+    let pn = 0, done = false, loading = false;
+    const row = (u: { mid: number; name: string; face: string }) => h('button', {
+      type: 'button', class: 'fd-up',
+      style: 'display:flex;align-items:center;gap:8px;background:none;border:0;color:inherit;cursor:pointer;padding:5px 6px;border-radius:8px;text-align:left;font:inherit;width:100%',
+      title: u.name,
+      onclick: () => { this.host = this.host === u.mid ? 0 : u.mid; void this.reload(); },
+      onmouseenter: (e: Event) => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,.06)'; },
+      onmouseleave: (e: Event) => { (e.currentTarget as HTMLElement).style.background = ''; },
+    }, h('span', { style: 'width:26px;height:26px;border-radius:50%;overflow:hidden;flex:none;display:block' }, face(u.face, '', 64)),
+       h('span', { style: 'font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis' }, u.name));
+
+    const load = async (): Promise<void> => {
+      if (loading || done) return;
+      loading = true; more.textContent = '加载中…';
+      try {
+        const r = await followings(a.mid, ++pn, 30);
+        for (const u of r.list) list.append(row(u));
+        done = !r.hasMore;
+        more.style.display = done ? 'none' : 'block';
+        more.textContent = '加载更多';
+      } catch {
+        more.style.display = 'none';
+        if (!list.children.length) list.append(h('p', { style: 'opacity:.55;font-size:12px;margin:0' }, '没取到关注列表'));
+      } finally { loading = false; }
+    };
+    more.onclick = () => void load();
+    await load();
   }
 
   private async renderMe(left: HTMLElement): Promise<void> {

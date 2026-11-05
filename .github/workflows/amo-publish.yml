@@ -1,0 +1,41 @@
+name: amo-publish
+# 手动补交 Firefox 附加组件商店：选一个标签（默认最新），构建 Firefox 版并用 AMO API 密钥提交。
+# 平时由 build.yml 在推送标签时自动提交；这里用于补交或首次接入。
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要提交的标签（留空 = 最新 Release）'
+        required: false
+concurrency:
+  group: amo-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+      AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Resolve tag
+        id: t
+        run: |
+          tag="${{ inputs.tag }}"
+          [ -z "$tag" ] && tag=$(gh release view -R "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.t.outputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run pack:firefox
+      - name: Publish to Firefox Add-ons
+        run: |
+          git archive --format=zip -o margin-source.zip HEAD
+          npx --yes web-ext@8 sign --source-dir dist-firefox --channel listed \
+            --upload-source-code margin-source.zip --approval-timeout 0 \
+            --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET" --artifacts-dir web-ext-artifacts

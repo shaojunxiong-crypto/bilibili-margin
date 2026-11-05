@@ -10,6 +10,7 @@
 
 <p>
   <a href="https://github.com/jiuyang5354/bilibili-margin/releases/latest"><img src="https://img.shields.io/github/v/release/jiuyang5354/bilibili-margin?label=version&amp;color=00aeec" alt="Latest release" /></a>
+  <a href="https://addons.mozilla.org/en-US/firefox/addon/%E6%98%A0%E9%97%B4-margin/"><img src="https://img.shields.io/amo/v/margin@jiuyang5354.github.io?label=Firefox%20Add-ons&amp;color=ff7139" alt="Firefox Add-ons" /></a>
   <img src="https://img.shields.io/badge/browser-Edge%20%2F%20Chrome%20%2F%20Firefox-535b66" alt="Edge, Chrome and Firefox" />
   <img src="https://img.shields.io/badge/extension-Manifest%20V3-535b66" alt="Manifest V3" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-535b66" alt="MIT license" /></a>
@@ -62,7 +63,7 @@ Screenshots illustrate the main interfaces; details may differ in the current ve
 
 To update a manual installation, replace the extracted files, click **Reload** on the extension management page, then refresh Bilibili. See the [changelog](CHANGELOG.en.md) for release details.
 
-**Firefox (140+)**: download [`margin-firefox.zip`](https://github.com/jiuyang5354/bilibili-margin/releases/latest/download/margin-firefox.zip) (direct link, always the latest), open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on** and select the zip. Temporary add-ons are removed when Firefox restarts; a permanent install will be available once MARGIN is listed on Firefox Add-ons.
+**Firefox (140+)**: [install from Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/%E6%98%A0%E9%97%B4-margin/) (recommended; permanent, auto-updating). Fallback: download [`margin-firefox.zip`](https://github.com/jiuyang5354/bilibili-margin/releases/latest/download/margin-firefox.zip) (direct link, always the latest), open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on** and select the zip; temporary add-ons are removed when Firefox restarts.
 
 Other Chromium browsers (Brave, Opera, Vivaldi, Arc and others) can follow the Chrome steps but are not individually tested. Safari is not supported yet.
 

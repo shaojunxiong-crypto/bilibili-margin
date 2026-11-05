@@ -31,6 +31,8 @@ export class BackgroundLayer {
 
   constructor() {
     this.el.append(this.canvas, this.img, h('div', { class: 'bg-scrim' }));
+    // #31：设置没变时 chrome.storage.onChanged 不会触发，换图后得靠这个事件立刻重读到新图
+    addEventListener('margin:bg-image', () => this.reloadImage());
     document.addEventListener('visibilitychange', () => (document.hidden ? this.stop() : this.loop()));
     new ResizeObserver(([e]) => { this.size = { w: e.contentRect.width, h: e.contentRect.height }; this.resize(); }).observe(this.el);
     onMotionChange(() => {
@@ -91,6 +93,16 @@ export class BackgroundLayer {
   }
 
   get shader(): ShaderId | null { return this.current; }
+
+  /** #31：换了背景图但设置没变（mode 本来就是 image）时，重新读一次存储 */
+  reloadImage(): void {
+    if (this.cfg?.mode !== 'image') return;
+    void chrome.storage.local.get(BG_IMAGE_KEY).then((r) => {
+      const url = r[BG_IMAGE_KEY] as string | undefined;
+      this.img.style.backgroundImage = url ? `url("${url}")` : '';
+      if (!url) this.el.dataset.mode = 'off';
+    });
+  }
 
   /** 让某个元素成为「液态玻璃」：背景着色器在它的位置做透镜折射（bubbbly GitHub Glass Card 的做法） */
   setLens(el: HTMLElement | null): void {

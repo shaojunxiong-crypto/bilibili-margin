@@ -41,8 +41,8 @@
 .et-btn > svg { flex: none; }
 .et-btn > span { display: block; max-width: 0; overflow: hidden; opacity: 0; transition: max-width .5s var(--et-ease), opacity .5s var(--et-ease); }
 .et-btn:hover { background: var(--chip); color: var(--ink); }
-.et-btn[data-selected] { gap: 8px; padding: 0 16px; background: var(--chip); color: var(--accent-text); }
-.et-btn[data-selected] > span { max-width: 4em; opacity: 1; }
+/* 选中/悬停都不改变宽度：指示条（.et-thumb）滑过去，文字只在 title 里出现（#11：不再挤压重排） */
+.et-btn[data-selected] { color: var(--accent-text); }
 .user { margin-left: 10px; display: grid; place-items: center; height: 36px; min-width: 36px; padding: 0 16px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; }
 .user.in { padding: 0; background: none; }
 .user img { width: 36px; height: 36px; border-radius: 50%; display: block; box-shadow: var(--ring); }

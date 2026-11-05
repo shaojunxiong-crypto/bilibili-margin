@@ -94,6 +94,13 @@ export async function portal(): Promise<{ ups: Up[]; live: LiveUp[]; liveCount: 
   return { ups, live, liveCount: d.live_users?.count ?? live.length };
 }
 
+/** #16：关注列表分页（动态页左侧「关注」区用），按最近互动排序 */
+export async function followings(me: number, pn: number, ps = 30): Promise<{ list: Up[]; hasMore: boolean; total: number }> {
+  const d = await getJSON<any>('/x/relation/followings', { vmid: me, pn, ps, order: 'mtime' });
+  const list = (d.list ?? []).map((u: any) => ({ mid: u.mid, name: u.uname, face: https(u.face), fresh: false }));
+  return { list, hasMore: list.length >= ps, total: d.total ?? 0 };
+}
+
 /** v0.49：在自己的关注里按昵称搜 UP（关注多时头像条翻不完，B 站评论反馈） */
 export async function searchFollowing(me: number, name: string): Promise<Up[]> {
   const d = await getJSON<any>('/x/relation/followings/search', { vmid: me, pn: 1, ps: 30, name });

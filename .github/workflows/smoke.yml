@@ -22,6 +22,8 @@ jobs:
         run: npm run test:unit
       - run: npx playwright install --with-deps chromium
       - run: npm run build
+      - name: Space drawer regressions
+        run: npm run test:drawers
       - name: Smoke test (offline mocked bilibili)
         run: npm run test:smoke
         env:

@@ -42,9 +42,12 @@ export function createExpandableTabs(items: TabItem[], onChange?: (i: number | n
   let selected: number | null = null;
   let pinned: number | null = null, hoverT = 0;
   let raf = 0, until = 0, x = 0, w = 0, shown = false;
+  /** 悬停预览的项（-1 = 没有）：只移动指示条，不选中、不改变任何宽度（#11） */
+  let hover = -1;
 
   const target = () => {
-    const b = selected === null ? null : buttons[selected];
+    const i = hover >= 0 ? hover : selected;
+    const b = i === null ? null : buttons[i];
     if (!b) return null;
     const r = b.getBoundingClientRect(), o = el.getBoundingClientRect();
     return { x: r.left - o.left - el.clientLeft, w: r.width };
@@ -86,21 +89,33 @@ export function createExpandableTabs(items: TabItem[], onChange?: (i: number | n
     const idx = buttons.length;
     const label = h('span', {}, it.title);
     const b = it.href
-      ? h('a', { class: 'act et-btn', href: it.href, target: '_blank', rel: 'noopener', 'aria-label': it.title }, icon(it.icon), label)
-      : h('button', { class: 'act et-btn', type: 'button', 'aria-label': it.title }, icon(it.icon), label);
-    b.addEventListener('click', () => { clearTimeout(hoverT); pinned = idx; select(idx); it.run?.(); });
+      ? h('a', { class: 'act et-btn', href: it.href, target: '_blank', rel: 'noopener', 'aria-label': it.title, title: it.title }, icon(it.icon), label)
+      : h('button', { class: 'act et-btn', type: 'button', 'aria-label': it.title, title: it.title }, icon(it.icon), label);
+    b.addEventListener('click', () => { clearTimeout(hoverT); hover = -1; pinned = idx; select(idx); it.run?.(); });
     // 悬停即展开文字（不执行动作），离开后回到点选的那一项
     b.addEventListener('pointerenter', (e) => {
       if ((e as PointerEvent).pointerType === 'touch' || !hoverOn) return;
       clearTimeout(hoverT);
-      select(idx);
+      hover = idx;
+      thumb.setAttribute('data-on', '');
+      shown = true;
+      until = performance.now() + 400;
+      if (!raf) raf = requestAnimationFrame(follow);
     });
     if (it.id) byId.set(it.id, b);
     buttons.push(b);
     el.append(b);
   }
 
-  el.addEventListener('pointerleave', () => { clearTimeout(hoverT); hoverT = window.setTimeout(() => select(pinned), 120); });
+  el.addEventListener('pointerleave', () => {
+    clearTimeout(hoverT);
+    hoverT = window.setTimeout(() => {
+      hover = -1;
+      if (selected === null) { thumb.removeAttribute('data-on'); shown = false; }
+      until = performance.now() + 400;
+      if (!raf) raf = requestAnimationFrame(follow);
+    }, 120);
+  });
 
   // useOnClickOutside：shadow DOM 里要看 composedPath
   addEventListener('pointerdown', (e) => { if (selected !== null && !e.composedPath().includes(el)) { pinned = null; select(null); } }, true);
