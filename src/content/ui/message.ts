@@ -46,6 +46,8 @@ export class MessageApp {
   private gen = 0;
   /** 上次刷新当前视图的时间：标签页切回来太久没刷就自动重拉（点赞/回复不刷新的反馈） */
   private shownAt = 0;
+  /** 页面加载完成后「刷新」按钮的自动点击，每次页面加载只点一次（防循环） */
+  private bootClick = false;
   /** 已推过已读游标的视图：15 秒轮询会反复走 feed()，游标只推一次 */
   private marked = new Set<View>();
 
@@ -235,6 +237,11 @@ export class MessageApp {
             this.marked.add(v);
             systemRead(p.top, csrf()).catch(() => {}).finally(() => this.setCount(v, () => 0));
           } else this.setCount(v, () => 0);
+          // 页面加载完成后，触发一次「刷新」按钮的点击操作（用户要求；每次页面加载只点一次，防循环）
+          if (!this.bootClick) {
+            this.bootClick = true;
+            this.pane.querySelector<HTMLButtonElement>('.ms-refresh')?.click();
+          }
         }
         cursor = p.cursor;
         more.hidden = !cursor;
