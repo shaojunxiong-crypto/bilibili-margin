@@ -37,7 +37,7 @@
 .et { --et-ease: cubic-bezier(.22, 1, .36, 1); display: flex; align-items: center; gap: 8px; padding: 4px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); box-shadow: 0 1px 2px rgb(0 0 0 / .05); }
 .et-sep { width: 1.2px; height: 24px; margin: 0 4px; background: var(--line); }
 .et-btn { display: inline-flex; flex: none; align-items: center; gap: 0; height: 36px; padding: 0 8px; border-radius: 12px; color: var(--muted); font-size: 14px; font-weight: 500; white-space: nowrap;
-  transition: gap .5s var(--et-ease), padding .5s var(--et-ease), color .3s var(--ease-out), background-color .3s var(--ease-out); }
+  transition: color 150ms var(--ease-out), background-color 150ms var(--ease-out); }
 .et-btn > svg { flex: none; }
 .et-btn > span { display: block; max-width: 0; overflow: hidden; opacity: 0; transition: max-width .5s var(--et-ease), opacity .5s var(--et-ease); }
 .et-btn:hover { background: var(--chip); color: var(--ink); }

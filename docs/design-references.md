@@ -6,6 +6,10 @@
 
 以下记录项目迭代中采用的参考与移植来源；历史实现描述不代表当前版本仍使用同一种技术。第三方代码、字体与素材遵循各自许可。
 
+- 私信图片 / 表情：参考 21st [Emoji Picker（liveblocks）](https://21st.dev/@liveblocks/components/emoji-picker) 的搜索、分类与弹出面板，以及 [File Attachment（serafimcloud）](https://21st.dev/@serafimcloud/components/file-attachment) 的缩略图 / 移除交互，按现有 TypeScript 与 CSS 变量独立实现，不增加 React 依赖。表情目录、上传与消息格式对照 B 站原生消息页脚本，不在运行时请求 21st。
+- 首页与播放页沿用原有昼夜开关；小主题按钮预览方案已按用户要求撤回。
+- 稍后再看图标：对齐 [B 站原生搜索页](https://search.bilibili.com/all?keyword=bilibili) 卡片的圆环播放图形；路径坐标保留三位小数并从 20 缩放到 24 viewBox。
+
 - 首页搜索栏（v0.23.0）：21st Placeholders And Vanish Input / Morphing Search / Expandable Search Bar；X 上 @MSchwaibold、@vponamariov 的搜索交互；热榜序号像素字体 Pirkkala（Otto Ojala，dafont，Public domain/OFL）
 - 播放页悬浮菜单字体（v0.23.2）：中文改无衬线 Margin Sans SC（思源黑体子集），英文副标 Alte Haas Grotesk（Yann Le Coroller，dafont，freeware，许可见 public/fonts/licenses/）
 - 头像工牌（v0.27.0）：移植自 21st「ID Card Lanyard」（用户提供代码）；v0.25.x 的推荐画廊（21st Elastic Gallery）已在 v0.27.0 移除
@@ -40,3 +44,7 @@
 
 
 实验功能「App 推荐流」（v0.48）：首页推荐改走 B 站 App 接口 `app.bilibili.com/x/v2/feed/index`，TV 端扫码授权拿 access_key。接口、APP 签名与扫码流程参考 [bilibili-API-collect](https://github.com/SocialSisterYi/bilibili-API-collect)（CC BY-NC 4.0，文档）与 [BewlyBewly](https://github.com/BewlyBewly/BewlyBewly)「授权 App」的做法（MIT），代码为原生重写。
+
+可选的「跳过视频内广告」使用 [小电视空降助手 / BilibiliSponsorBlock](https://github.com/hanydd/BilibiliSponsorBlock) 社区片段及其[公开 API](https://github.com/hanydd/BilibiliSponsorBlock/wiki/API)。片段来自社区贡献者，仅按 BVID 哈希前缀只读查询，不捆绑数据库或复制上游扩展代码。映间的查询、播放器跳过与撤销逻辑为独立实现；社区片段与第三方服务不属于本仓库的 MIT 代码许可。
+
+扩展自带操作图标取自 IconMCP 的 outline 图标，通过 Icon MCP 查询并导出静态 SVG，统一按 20px / 1.5px 线宽本地打包；保留品牌标志、原生 B 站控件及场景插画。图标运行时不访问外部服务。

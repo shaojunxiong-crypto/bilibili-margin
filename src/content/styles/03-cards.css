@@ -90,7 +90,9 @@
 
 /* favorites */
 .fav-body { padding-top: 20px; }
-.shelf { display: grid; grid-template-columns: repeat(auto-fill, 236px); justify-content: space-between; align-items: end; gap: 40px 16px; padding: 32px 10px 28px; margin: 0 -4px; }
+.shelf { display: grid; grid-template-columns: repeat(var(--fav-cols,3), minmax(0,1fr)); justify-content: space-between; align-items: end; gap: 40px 16px; padding: 32px 10px 28px; margin: 0 -4px; }
+.shelf .gf-root,.shelf .fav-new { width:100%!important; }
+@media(max-width:600px) { .shelf { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 .crumb { display: flex; align-items: baseline; gap: 10px; padding: 6px 0 16px; }
 .crumb span { font: 600 18px/1.2 var(--serif); }
 .crumb small { font: 11px/1 var(--mono); color: var(--faint); }

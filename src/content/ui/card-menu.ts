@@ -4,6 +4,7 @@ import { cardData } from './card';
 import type { ContextMenu, MenuEntry } from './context-menu';
 import { toast } from './controls';
 import { ICONS } from './dom';
+import { openBili } from '../navigation';
 
 /** 视频卡片右键菜单：新标签打开、稍后再看、复制链接 / BV 号、UP 主空间、屏蔽 UP */
 export function bindCardMenu(container: HTMLElement, cm: ContextMenu, toastRoot: () => HTMLElement, opts: { onBlock?: (v: Video) => void; onLater?: () => void; onDislike?: (v: Video, card: HTMLElement) => void } = {}): void {
@@ -21,7 +22,7 @@ export function bindCardMenu(container: HTMLElement, cm: ContextMenu, toastRoot:
       'separator',
       { label: '复制链接', icon: ICONS.link, run: () => copy(url, '链接已复制') },
       { label: '复制 BV 号', icon: ICONS.copy, run: () => copy(v.bvid, `${v.bvid} 已复制`) },
-      { label: `打开「${v.author}」的空间`, icon: ICONS.user, run: () => window.open(`https://space.bilibili.com/${v.mid}`, '_blank', 'noopener') },
+      { label: `打开「${v.author}」的空间`, icon: ICONS.user, run: () => openBili(`https://space.bilibili.com/${v.mid}`) },
     ];
     const neg: MenuEntry[] = [];
     if (opts.onDislike && v.trackId) neg.push({ label: '不感兴趣', icon: ICONS.close, run: () => opts.onDislike!(v, card as HTMLElement) });

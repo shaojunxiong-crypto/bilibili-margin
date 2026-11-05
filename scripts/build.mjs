@@ -22,7 +22,7 @@ const entries = [
   { name: 'background', entry: 'src/background/sw.ts' },
 ];
 // 按路由动态 import 的页面模块（ES，共享代码自动拆成 pages/chunk-*.js）
-const PAGES = ['home', 'watch', 'space', 'message', 'history', 'feed', 'detail'];
+const PAGES = ['home', 'watch', 'space', 'message', 'history', 'feed', 'detail', 'space-hooks'];
 
 await rm('dist', { recursive: true, force: true });
 await mkdir('dist', { recursive: true });

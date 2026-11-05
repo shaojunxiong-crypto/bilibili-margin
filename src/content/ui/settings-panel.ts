@@ -9,7 +9,8 @@ import { fmtCount, h, icon, ICONS } from './dom';
 import { createSheet, type Sheet } from './sheet';
 import { SITE_LINKS } from './header';
 import { appPoll, appQr, appRevoke, appState } from '../api/appfeed';
-import { clearLoc, geocodeList, savedLoc, setLoc as setLocWithName } from '../api/weather';
+import { clearLoc, savedLoc, setLoc as setLocWithName } from '../api/weather';
+import { createCityPicker } from './city-picker';
 
 export interface SettingsPanel { sheet: Sheet; sync(s: Settings): void }
 
@@ -29,6 +30,8 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
   const s0 = get();
 
   const theme = segmented<Theme>([['auto', '跟随系统'], ['light', '亮色'], ['dark', '暗色']], s0.theme, (v) => save({ theme: v }));
+  const accent = segmented<Settings['accent']>([['classic','经典'],['blue','哔哩蓝'],['pink','哔哩粉']],s0.accent,(accent) => save({ accent }));
+  const glass = segmented<Settings['glass']>([['soft','柔和磨砂'],['liquid','液态折射']],s0.glass,(glass) => save({ glass }));
   const watch = toggle(s0.watch, '其他页面重设计', (v) => save({ watch: v }));
   const preview = toggle(s0.hoverPreview, '悬停预览', (v) => save({ hoverPreview: v }));
   const intro = toggle(s0.intro, '开场动画', (v) => save({ intro: v }));
@@ -55,7 +58,11 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
   // 首页版块顺序（v0.47）：上移 / 下移，保存后 MarginApp 立即移动节点
   const orderBox = h('div', { class: 'home-order' });
   let order = normalizeHomeOrder(s0.homeOrder);
+  let paintedOrder = '';
   function paintOrder() {
+    const key = order.join('|');
+    if (key === paintedOrder) return;
+    paintedOrder = key;
     const active = (orderBox.getRootNode() as Document | ShadowRoot).activeElement as HTMLElement | null;
     const focusKey = active?.dataset.focus ?? '';
     orderBox.replaceChildren(...order.map((id, i) => {
@@ -63,11 +70,11 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
       const up = h('button', {
         type: 'button', class: 'home-order-btn', 'aria-label': `上移${name}`, title: '上移',
         disabled: i === 0, 'data-focus': `${id}:up`,
-      }, '↑');
+      }, icon(ICONS.arrowUp));
       const down = h('button', {
         type: 'button', class: 'home-order-btn', 'aria-label': `下移${name}`, title: '下移',
         disabled: i === order.length - 1, 'data-focus': `${id}:down`,
-      }, '↓');
+      }, icon(ICONS.arrowDown));
       up.addEventListener('click', () => move(id, -1));
       down.addEventListener('click', () => move(id, 1));
       return h('div', { class: 'home-order-row', 'data-section': id },
@@ -87,33 +94,23 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
   }
   paintOrder();
   // 天气城市（#3）：输入后列出候选，点一个就固定；「自动」回到 IP 定位
-  const cityIn = h('input', { class: 'city-in', type: 'search', placeholder: '自动定位', 'aria-label': '天气城市', autocomplete: 'off' }) as HTMLInputElement;
-  const cityList = h('ul', { class: 'city-list', role: 'listbox', 'aria-label': '城市候选', hidden: '' });
   const cityAuto = h('button', { class: 'city-auto', type: 'button' }, '自动');
-  const paintCity = () => { const l = savedLoc(); cityIn.value = l?.manual ? l.name : ''; cityAuto.hidden = !l?.manual; };
-  let cityT = 0, citySeq = 0;
-  cityIn.addEventListener('keydown', (e) => e.stopPropagation());
-  cityIn.addEventListener('input', () => {
-    clearTimeout(cityT);
-    const q = cityIn.value.trim();
-    if (!q) { cityList.hidden = true; return; }
-    cityT = window.setTimeout(async () => {
-      const seq = ++citySeq;
-      const list = await geocodeList(q).catch(() => []);
-      if (seq !== citySeq) return;
-      cityList.replaceChildren(...(list.length ? list.map((p) => {
-        const li = h('li', { role: 'option', tabindex: '0' }, h('b', {}, p.name), p.region ? h('small', {}, p.region) : null);
-        const pick = () => { setLocWithName(p); cityList.hidden = true; paintCity(); say(`天气城市：${p.name}`); };
-        li.addEventListener('click', pick);
-        li.addEventListener('keydown', (e) => { if (e.key === 'Enter') pick(); });
-        return li;
-      }) : [h('li', { class: 'empty' }, '没有找到这个城市')]));
-      cityList.hidden = false;
-    }, 300);
+  const cityPicker = createCityPicker(place => {
+    setLocWithName(place);
+    say(`天气城市：${place.name} · ${place.region}`);
   });
+  cityPicker.input.placeholder = '自动定位';
+  cityPicker.row.append(cityAuto);
+  const paintCity = () => {
+    cityPicker.cancel();
+    const loc = savedLoc();
+    cityPicker.input.value = loc?.manual ? loc.name : '';
+    cityAuto.hidden = !loc?.manual;
+  };
   cityAuto.addEventListener('click', () => { clearLoc(); paintCity(); say('天气改回按 IP 自动定位'); });
+  addEventListener('margin:wx-loc', paintCity);
   paintCity();
-  const cityBox = h('div', { class: 'city-box' }, h('div', { class: 'city-row' }, cityIn, cityAuto), cityList);
+  const cityBox = cityPicker.el;
   const cols = segmented<string>([['0', '自动'], ['4', '4 个'], ['5', '5 个'], ['6', '6 个']], String(s0.cols), (v) => save({ cols: Number(v) as 0 | 4 | 5 | 6 }));
   const fontS = segmented<'serif' | 'sans'>([['serif', '衬线'], ['sans', '无衬线']], s0.titleFont, (v) => save({ titleFont: v }));
   const monoT = toggle(s0.monoNum, '数字用等宽字体', (v) => save({ monoNum: v }));
@@ -127,36 +124,43 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
   fontReset.addEventListener('click', () => { fontIn.value = ''; saveFont(); });
   const fontBox = h('div', { class: 'city-box' }, h('div', { class: 'city-row' }, fontIn, fontReset));
   // 顶栏入口（v0.47.1）：每行一个开关；B 站入口可以上下调顺序
-  const OWN: [string, string][] = [['收藏', ICONS.fav], ['稍后', ICONS.later], ['足迹', ICONS.heat], ['原版', ICONS.exit]];
+  const OWN: [string, string][] = [['收藏', ICONS.fav], ['稍后', ICONS.later], ['足迹', ICONS.heat], ['原版', ICONS.exit], ['投稿', ICONS.upload]];
   const headList = h('div', { class: 'hl', role: 'list', 'aria-label': '顶栏入口' });
-  const siteOrder = (st: Settings) => [...st.headOrder.filter((t) => SITE_LINKS.some((l) => l.title === t)), ...SITE_LINKS.map((l) => l.title).filter((t) => !st.headOrder.includes(t))];
+  const movable = [...SITE_LINKS.map((l) => [l.title,l.icon]),...OWN.filter(([title]) => title !== '投稿')];
+  const siteOrder = (st: Settings) => [...st.headOrder.filter((t) => movable.some(([label]) => label === t)),...movable.map(([label]) => label).filter((t) => !st.headOrder.includes(t))];
+  let paintedHead = '';
   const paintHead = () => {
     const st = get();
+    const key = JSON.stringify([st.headOrder, st.headHide]);
+    if (key === paintedHead) return;
+    paintedHead = key;
+    const active = (headList.getRootNode() as Document | ShadowRoot).activeElement as HTMLElement | null;
+    const focusLabel = active && headList.contains(active) ? active.getAttribute('aria-label') : null;
     const order = siteOrder(st);
     const mkRow = (title: string, ic: string, i: number | null) => {
       const on = !st.headHide.includes(title);
       const sw = toggle(on, `顶栏显示${title}`, (v) => save({ headHide: v ? get().headHide.filter((x) => x !== title) : [...get().headHide, title] }).then(paintHead));
-      const mv = (d: number, label: string, ch: string) => {
-        const b = h('button', { type: 'button', class: 'hl-mv', 'aria-label': `${title}${label}`, title: label }, ch) as HTMLButtonElement;
+      const mv = (d: number, label: string, paths: string) => {
+        const b = h('button', { type: 'button', class: 'hl-mv', 'aria-label': `${title}${label}`, title: label }, icon(paths)) as HTMLButtonElement;
         if (i === null || i + d < 0 || i + d >= order.length) b.disabled = true;
         else b.onclick = () => { const o = [...order]; [o[i], o[i + d]] = [o[i + d], o[i]]; save({ headOrder: o }).then(paintHead); };
         return b;
       };
-      const r = h('div', { class: 'hl-row', role: 'listitem' }, icon(ic), h('span', {}, title), i === null ? h('span') : mv(-1, '上移', '↑'), i === null ? h('span') : mv(1, '下移', '↓'), sw);
+      const r = h('div', { class: 'hl-row', role: 'listitem' }, icon(ic), h('span', {}, title), i === null ? h('span') : mv(-1, '上移', ICONS.arrowUp), i === null ? h('span') : mv(1, '下移', ICONS.arrowDown), sw);
       if (!on) r.dataset.off = '';
       return r;
     };
     headList.replaceChildren(
-      ...order.map((t, i) => mkRow(t, SITE_LINKS.find((l) => l.title === t)!.icon, i)),
-      h('div', { class: 'hl-sep', 'aria-hidden': 'true' }),
-      ...OWN.map(([t, ic]) => mkRow(t, ic, null)));
+      ...order.map((t, i) => mkRow(t, movable.find(([label]) => label === t)![1], i)),
+      mkRow('投稿',ICONS.upload,null));
+    if (focusLabel) [...headList.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.getAttribute('aria-label') === focusLabel && !b.disabled)?.focus({ preventScroll:true });
   };
   paintHead();
   const headReset = h('button', { type: 'button', class: 'ghost small', onclick: () => save({ headHide: [], headOrder: [] }).then(paintHead) }, h('span', {}, '恢复默认'));
   const zoomS = segmented<string>([['100', '100%'], ['110', '110%'], ['120', '120%']], String(s0.zoom), (v) => save({ zoom: Number(v) as 100 | 110 | 120 }));
   const radS = segmented<string>([['0', '直角'], ['50', '小'], ['100', '默认'], ['150', '大']], String(s0.radius), (v) => save({ radius: Number(v) as 0 | 50 | 100 | 150 }));
   const cfsS = segmented<string>([['14', '14'], ['15', '15'], ['16', '16'], ['17', '17']], String(s0.commentSize), (v) => save({ commentSize: Number(v) as 14 | 15 | 16 | 17 }));
-  const hoverT = toggle(s0.headHover, '顶栏悬停展开文字', (v) => save({ headHover: v }));
+  const hoverT = toggle(s0.headHover, '顶栏悬停指示', (v) => save({ headHover: v }));
   const cmdKT = toggle(s0.cmdK, 'Ctrl+K 打开命令面板', (v) => save({ cmdK: v }));
   // 视频 CDN 节点（v0.47.2）：列表 + 延迟测速；选中后新打开的视频生效
   const CDNS: [string, string][] = [
@@ -170,8 +174,12 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
   ];
   const cdnMs = new Map<string, number>();
   const cdnList = h('div', { class: 'hl cdn', role: 'radiogroup', 'aria-label': '视频 CDN 节点' });
+  let paintedCdn = '';
   const paintCdn = () => {
     const cur = get().cdn;
+    const key = JSON.stringify([cur, [...cdnMs]]);
+    if (key === paintedCdn) return;
+    paintedCdn = key;
     cdnList.replaceChildren(...CDNS.map(([host, name]) => {
       const ms = cdnMs.get(host);
       const b = h('button', { type: 'button', class: 'hl-row cdn-row', role: 'radio', 'aria-checked': String(cur === host), onclick: () => save({ cdn: host }).then(paintCdn) },
@@ -198,6 +206,7 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
   } }, '测速');
   const idD = toggle(s0.idDrag, '账号卡片可拖拽', (v) => save({ idDrag: v }));
   const favD = toggle(s0.favDirect, '收藏夹直接展开', (v) => save({ favDirect: v }));
+  const favCols = segmented<string>([['2','2 列'],['3','3 列'],['4','4 列']], String(s0.favColumns),(v) => save({ favColumns:Number(v) as 2 | 3 | 4 }));
   const wideT = toggle(s0.wide, '宽屏模式', (v) => save({ wide: v }));
   const autoW = toggle(s0.autoWeb, '自动网页全屏', (v) => save({ autoWeb: v }));
   const webS = toggle(s0.webScroll, '网页全屏可滚动', (v) => save({ webScroll: v }));
@@ -211,6 +220,7 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
   const views = stepSlider([0, 1000, 10000, 50000, 100000, 1000000], s0.filters.minViews, (n) => (n ? `≥ ${fmtCount(n)}` : '不限'), (v) => save({ filters: { ...get().filters, minViews: v } }), '最低播放量');
   const dur = segmented<string>([['0', '不限'], ['60', '1 分钟'], ['180', '3 分钟'], ['600', '10 分钟']], String(s0.filters.minDuration), (v) => save({ filters: { ...get().filters, minDuration: Number(v) } }));
   const adsT = toggle(s0.hideAds, '隐藏广告', (v) => save({ hideAds: v }));
+  const sponsorT = toggle(s0.sponsorSkip, '跳过视频内广告', (v) => save({ sponsorSkip: v }));
 
   const mode = segmented<BgMode>([['random', '随机'], ['fixed', '固定'], ['image', '图片'], ['off', '关闭']], s0.bg.mode, (v) => {
     if (v === 'image') { file.click(); return; }
@@ -270,7 +280,8 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
     poolBox.append(b);
   }
   paintPool();
-  const intensity = rangeSlider(s0.bg.intensity, (n) => `${Math.round(n * 100)}%`, (v) => save({ bg: { ...get().bg, intensity: v } }), '背景强度');
+  const intensity = rangeSlider(s0.bg.intensity, (n) => `${Math.round(n * 100)}%`, (v) => save({ bg: { ...get().bg, intensity: v } }), '背景强度',
+    (v) => dispatchEvent(new CustomEvent('margin:bg-intensity', { detail: v })));
   const file = h('input', { type: 'file', accept: 'image/*', hidden: true, 'aria-label': '选择背景图片' });
   file.addEventListener('change', async () => {
     const f = file.files?.[0];
@@ -384,7 +395,7 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
     const panel = h('div', { class: 'sd-panel', id, role: 'region' }, inner);
     const btn = h('button', { type: 'button', class: 'sd-head', 'aria-expanded': 'false', 'aria-controls': id },
       h('span', { class: 'sd-t' }, title), note, h('span', { class: 'sd-chev', 'aria-hidden': 'true' })) as HTMLButtonElement;
-    btn.querySelector('.sd-chev')!.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    btn.querySelector('.sd-chev')!.append(icon(ICONS.chevronDown));
     const set = (open: boolean) => { btn.setAttribute('aria-expanded', String(open)); wrap.toggleAttribute('data-open', open); inner.toggleAttribute('inert', !open); };
     btn.onclick = () => set(btn.getAttribute('aria-expanded') !== 'true');
     const wrap = h('div', { class: 'sd' }, btn, panel);
@@ -395,6 +406,8 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
   sheet.body.append(
     h('section', { class: 'group' }, h('h3', {}, '外观'),
       block('明暗', null, theme),
+      row('强调色', null, accent),
+      row('玻璃质感', null, glass),
       row('封面悬停预览', '鼠标停留半秒后静音播放', preview),
       row('减少动画', '暂停背景、天气和悬停动画，并减少界面过渡；系统减少动态效果始终生效', reduceM),
       row('其他页面重设计', '播放页、搜索页、空间、动态等，只换外观不改功能', watch),
@@ -402,20 +415,21 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
         block('标题字体', '页面标题和大号文字用衬线（宋体）还是无衬线（黑体）', fontS),
         block('正文字体', '填本机已经装好的字体名；标题选「无衬线」时标题也用它。留空 = 映间默认', fontBox),
         row('数字用等宽字体', '播放量、时间、UID 这些小字；关掉后和正文字体一致', monoT),
-        block('内容缩放', '字太小时放大首页、空间、消息、历史、动态的内容区；播放页和搜索页用浏览器缩放（Ctrl +）', zoomS),
-        block('评论字号', '视频和动态评论区的正文大小（px）', cfsS)),
+        block('内容缩放', '字太小时放大首页、空间、消息、历史、动态的内容区；播放页和搜索页用浏览器缩放（Ctrl +）', zoomS)),
       drawer('布局与细节', () => { const st = get(); return [st.cols ? `每行 ${st.cols} 个` : '每行自动', st.radius === 0 ? '直角' : st.radius === 50 ? '小圆角' : st.radius === 150 ? '大圆角' : ''].filter(Boolean).join(' · '); },
         block('圆角', '卡片、按钮、面板的圆角大小；头像这类圆形不受影响', radS),
         block('首页每行视频', '自动按窗口宽度排 6–8 个；也可以固定 4 / 5 / 6 个，卡片更大', cols),
         row('开场动画', '每次打开浏览器后第一次进首页播放，点一下可跳过', intro),
         row('收藏夹直接展开', '点收藏夹直接列出全部视频，不再先弹出最近 4 个', favD),
+        row('收藏夹列数', null, favCols),
         row('账号卡片可拖拽', '关掉后头像下的卡片固定挂着，不能甩动，点一下仍可翻面', idD))),
     h('section', { class: 'group' }, h('h3', {}, '顶栏'),
       row('Ctrl+K 打开命令面板', 'B 站自己没有 Ctrl+K；和浏览器或其他扩展冲突时关掉，按 / 照样能打开', cmdKT),
-      row('悬停展开文字', '鼠标移到顶栏图标上就展开名字；关掉后只在点击时展开', hoverT),
+      row('悬停指示', '指示条跟随鼠标移到的顶栏图标；关闭后跟随点击', hoverT),
       drawer('顶栏入口', () => { const n = get().headHide.length; return n ? `已隐藏 ${n} 个` : '全部显示'; },
-        h('p', { class: 'sd-note' }, '关掉的入口不在顶栏显示；YouTube 模式下这些入口在左侧导航里隐藏 / 排序。B 站入口可以用箭头调顺序。「设置」始终保留'), headList, h('div', { class: 'hl-foot' }, headReset))),
+        h('p', { class: 'sd-note' }, '关掉的入口不在顶栏显示；用箭头调整快捷入口顺序。「设置」始终保留'), headList, h('div', { class: 'hl-foot' }, headReset))),
     h('section', { class: 'group' }, h('h3', {}, '播放页'),
+      row('评论字号', '视频、动态评论与输入文字大小（px）', cfsS),
       row('宽屏模式', '有播放器时自动进入宽屏；番剧、列表和稍后再看等页面同样生效；和自动网页全屏同时开启时优先网页全屏', wideT),
       row('自动网页全屏', '有播放器的页面打开后自动铺满浏览器窗口，按 Esc 退出', autoW),
       row('网页全屏时可滚动', '网页全屏下往下滚就能看评论，播放器跟着滚走', webS),
@@ -433,7 +447,7 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
       row('足迹热力图', '关掉只是不显示，足迹照样在本机记录', foot),
       row('天气', '关掉后不再请求天气和城市定位', wxT),
       drawer('天气城市与卡片信息', () => { const l = savedLoc(); return l?.manual ? l.name : '自动定位'; },
-        block('天气城市', 'IP 定位不准时手动选一个；留空 = 自动定位', cityBox),
+        block('天气城市', '选中候选固定城市；点击「自动」恢复 IP 定位', cityBox),
         block('卡片信息', '首页视频卡片下面显示哪些，点一下开关', cardBits)),
       block('版块顺序', '上移 / 下移调整首页版块；修改后立即生效', orderBox)),
     h('section', { class: 'group' }, h('h3', {}, '背景'),
@@ -450,7 +464,8 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
       drawer('播放量与时长', () => '',
         block('最低播放量', null, views),
         block('最短时长', null, dur)),
-      row('隐藏广告', '隐藏播放页、搜索页、热门排行和番剧页的推广内容', adsT)),
+      row('隐藏广告', '隐藏播放页、搜索页、热门排行和番剧页的推广内容', adsT),
+      row('跳过视频内广告', h('span', {}, '默认关闭；普通 BV 视频按社区标记跳过，可撤销。开启后向 ', h('a', { href: 'https://bsbsb.top/', target: '_blank', rel: 'noopener noreferrer' }, '小电视空降助手'), ' 查询哈希前缀；不保证完播率。'), sponsorT)),
     h('section', { class: 'group' }, h('h3', {}, '实验功能'),
       row('App 推荐流', '首页「推荐」改用手机 App 的推荐；关掉就是网页版原来的推荐', appT),
       drawer('App 授权', () => (authed ? '已授权' : '未授权'),
@@ -474,6 +489,7 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
       reduceM.setAttribute('aria-checked', String(s.reduceMotion));
       appT.setAttribute('aria-checked', String(s.appFeed));
       rankT.setAttribute('aria-checked', String(s.rerank));
+      sponsorT.setAttribute('aria-checked', String(s.sponsorSkip));
       watch.setAttribute('aria-checked', String(s.watch));
       foot.setAttribute('aria-checked', String(s.footprint));
       wxT.setAttribute('aria-checked', String(s.weather));
@@ -485,6 +501,7 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
       order = normalizeHomeOrder(s.homeOrder);
       paintOrder();
       favD.setAttribute('aria-checked', String(s.favDirect));
+      favCols.set(String(s.favColumns));
       wideT.setAttribute('aria-checked', String(s.wide));
       autoW.setAttribute('aria-checked', String(s.autoWeb));
       webS.setAttribute('aria-checked', String(s.webScroll));
@@ -498,6 +515,8 @@ function buildSettingsPanel(sheet: Sheet, get: () => Settings, currentShader: ()
       zoomS.set(String(s.zoom));
       radS.set(String(s.radius));
       cfsS.set(String(s.commentSize));
+      accent.set(s.accent);
+      glass.set(s.glass);
       hoverT.setAttribute('aria-checked', String(s.headHover));
       cmdKT.setAttribute('aria-checked', String(s.cmdK));
       paintCdn();

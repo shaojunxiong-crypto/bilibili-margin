@@ -42,6 +42,8 @@ export interface Settings {
   enabled: boolean;
   theme: Theme;
   palette: Palette;
+  accent: 'classic' | 'blue' | 'pink';
+  glass: 'soft' | 'liquid';
   hoverPreview: boolean;
   /** 重新设计视频播放页（保留 B 站原生播放器与评论） */
   watch: boolean;
@@ -54,6 +56,7 @@ export interface Settings {
   weather: boolean;
   /** 点收藏夹直接展开全部视频（关掉时先扇形弹出最近 4 个） */
   favDirect: boolean;
+  favColumns: 2 | 3 | 4;
   /** 播放页打开后自动进入网页全屏 */
   autoWeb: boolean;
   /** 网页全屏时可以往下滚动看评论（播放器跟着滚走） */
@@ -91,6 +94,8 @@ export interface Settings {
   wide: boolean;
   /** 隐藏广告与推广（v0.47），默认开启；只做展示层过滤 */
   hideAds: boolean;
+  /** 社区广告片段自动跳过，默认关闭；只读小电视空降助手数据 */
+  sponsorSkip: boolean;
   /** 顶栏消息未读轮询与消息角标（v0.47）；动态角标不受影响 */
   msgRemind: boolean;
   /** 首页板块顺序（v0.47） */
@@ -126,12 +131,15 @@ export const DEFAULTS: Settings = {
   enabled: true,
   theme: 'auto',
   palette: 'classic',
+  accent: 'classic',
+  glass: 'soft',
   hoverPreview: true,
   watch: true,
   intro: true,
   footprint: true,
   weather: true,
-  favDirect: false,
+  favDirect: true,
+  favColumns: 3,
   autoWeb: false,
   webScroll: true,
   speedKeys: true,
@@ -151,6 +159,7 @@ export const DEFAULTS: Settings = {
   reduceMotion: false,
   wide: false,
   hideAds: true,
+  sponsorSkip: false,
   msgRemind: true,
   homeOrder: [...HOME_SECTIONS],
   appFeed: false,
@@ -190,6 +199,9 @@ function merge(raw: Partial<Settings> | undefined): Settings {
     homeHide: Array.isArray(r.homeHide) ? HOME_BITS.filter((b) => r.homeHide!.includes(b)) : [],
     titleFont: r.titleFont === 'sans' ? 'sans' : 'serif',
     theme: r.theme === 'light' || r.theme === 'dark' ? r.theme : 'auto',
+    accent: r.accent === 'blue' || r.accent === 'pink' ? r.accent : 'classic',
+    glass: r.glass === 'liquid' ? 'liquid' : 'soft',
+    favColumns: r.favColumns === 2 || r.favColumns === 4 ? r.favColumns : 3,
     monoNum: r.monoNum !== false,
     headHide: strList(r.headHide),
     headOrder: strList(r.headOrder),
@@ -202,6 +214,7 @@ function merge(raw: Partial<Settings> | undefined): Settings {
     reduceMotion: r.reduceMotion === true,
     wide: r.wide === true,
     hideAds: r.hideAds !== false,
+    sponsorSkip: r.sponsorSkip === true,
     msgRemind: r.msgRemind !== false,
     homeOrder: normalizeHomeOrder(r.homeOrder),
     appFeed: r.appFeed === true,
@@ -238,7 +251,11 @@ export function sanitizeSettings(raw: unknown): Settings | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const r = raw as Record<string, unknown>;
   const out: Partial<Settings> = {};
-  const bool = (k: 'enabled' | 'hoverPreview' | 'watch' | 'intro' | 'footprint' | 'weather' | 'favDirect' | 'autoWeb' | 'webScroll' | 'speedKeys' | 'replyTree' | 'idDrag' | 'monoNum' | 'reduceMotion' | 'wide' | 'hideAds' | 'msgRemind' | 'appFeed' | 'rerank' | 'headHover' | 'tabRefresh') => { if (typeof r[k] === 'boolean') out[k] = r[k] as boolean; };
+  if (r.accent === 'classic' || r.accent === 'blue' || r.accent === 'pink') out.accent = r.accent;
+  if (r.glass === 'soft' || r.glass === 'liquid') out.glass = r.glass;
+  if (r.favColumns === 2 || r.favColumns === 3 || r.favColumns === 4) out.favColumns = r.favColumns;
+  const bool = (k: 'enabled' | 'hoverPreview' | 'watch' | 'intro' | 'footprint' | 'weather' | 'favDirect' | 'autoWeb' | 'webScroll' | 'speedKeys' | 'replyTree' | 'idDrag' | 'monoNum' | 'reduceMotion' | 'wide' | 'hideAds' | 'sponsorSkip' | 'msgRemind' | 'appFeed' | 'rerank' | 'headHover' | 'tabRefresh') => { if (typeof r[k] === 'boolean') out[k] = r[k] as boolean; };
+  bool('sponsorSkip');
   bool('enabled'); bool('hoverPreview'); bool('watch'); bool('intro'); bool('footprint'); bool('weather'); bool('favDirect'); bool('autoWeb'); bool('webScroll'); bool('speedKeys'); bool('replyTree'); bool('idDrag'); bool('monoNum');
   bool('reduceMotion'); bool('wide'); bool('hideAds'); bool('msgRemind'); bool('appFeed'); bool('rerank'); bool('headHover'); bool('tabRefresh');
   if (r.radius === 0 || r.radius === 50 || r.radius === 100 || r.radius === 150) out.radius = r.radius;

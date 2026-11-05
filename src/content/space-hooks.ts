@@ -2,6 +2,7 @@ import css from './styles/index';
 import { createFavorites } from './ui/favorites';
 import { createLaterDrawer } from './ui/drawer';
 import { createHistoryDrawer } from './ui/history-drawer';
+import { loadSettings, onSettingsChange } from '../shared/settings';
 
 /**
  * 空间页「原生模式」的钩子（GitHub #52 / #38 后续）。
@@ -12,6 +13,7 @@ import { createHistoryDrawer } from './ui/history-drawer';
  * 并注入整份 app CSS，否则拿不到主题变量，也没 .dw-* 的样式。
  */
 let installed = false;
+let favDirect = false;
 let built: { fav: { open(): void }; hist: { open(): void }; later: { open(): void } } | null = null;
 
 function ensure() {
@@ -29,7 +31,7 @@ function ensure() {
   root.append(style, app);
   document.body.append(host);
 
-  const fav = createFavorites(() => { /* 空间页不做悬停预览 */ });
+  const fav = createFavorites(() => { /* 空间页不做悬停预览 */ }, () => favDirect);
   const hist = createHistoryDrawer();
   const later = createLaterDrawer(() => app);
   app.append(fav.el as HTMLElement, hist.el, later.el);
@@ -40,6 +42,8 @@ function ensure() {
 export function installSpaceHooks(): void {
   if (installed) return;
   installed = true;
+  loadSettings().then((s) => { favDirect = s.favDirect; }).catch(() => {});
+  onSettingsChange((s) => { favDirect = s.favDirect; });
   document.addEventListener('click', (ev) => {
     const t = ev.target as HTMLElement | null;
     const a = t?.closest?.('a[href]') as HTMLAnchorElement | null;

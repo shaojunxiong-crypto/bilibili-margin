@@ -12,6 +12,7 @@ import { liveTv } from './tv-eyes';
 import { attachHoverList, POPS, type PopHandle } from './dyn-pop';
 import { createSettingsButton } from './settings-btn';
 import type { FilterRuntime } from '../filter-runtime';
+import { openBili } from '../navigation';
 
 /** 顶栏左上角的小电视：开场动画结束时图标就飞落到这里 */
 function tv(): HTMLElement { const s = h('span', { class: 'tv', 'aria-hidden': 'true' }); setMarkup(s, BILI_TIGHT); liveTv(s); return s; }
@@ -51,7 +52,7 @@ export function createHeader(o: { tabs: TabItem[]; onTheme: () => void; onSearch
     onsubmit: (e: Event) => {
       e.preventDefault();
       const q = input.value.trim();
-      if (q) window.open(`https://search.bilibili.com/all?keyword=${encodeURIComponent(q)}`, '_blank', 'noopener');
+      if (q) openBili(`https://search.bilibili.com/all?keyword=${encodeURIComponent(q)}`);
     },
   }, icon(ICONS.search), input, h('kbd', {}, '/'));
   if (o.onSearch) {
@@ -79,16 +80,20 @@ export function createHeader(o: { tabs: TabItem[]; onTheme: () => void; onSearch
     popHandles.push(pop);
     if (label === '消息') msgPop = pop;
   }
-  // 顶栏入口自定义（v0.47.1）：隐藏的入口 hidden；B 站入口按设置里的顺序用 CSS order 排，分隔线和个人入口固定在后面
+  // 默认保留旧版顺序；自定义排序包含个人入口时，各项按同一序列排列。
   const applyPrefs = (st: Settings) => {
+    upload.hidden = st.headHide.includes('投稿');
     const siteIdx = new Map(SITE_LINKS.map((l, i) => [l.title, i]));
-    const order = [...st.headOrder.filter((t) => siteIdx.has(t)), ...SITE_LINKS.map((l) => l.title).filter((t) => !st.headOrder.includes(t))];
+    const titles = tabsNav.buttons.map((b) => b.querySelector('span')?.textContent ?? '');
+    const personal = st.headOrder.some((t) => titles.includes(t) && !siteIdx.has(t));
+    const available = personal ? titles : SITE_LINKS.map((l) => l.title);
+    const order = [...st.headOrder.filter((t) => available.includes(t)),...available.filter((t) => !st.headOrder.includes(t))];
     for (const b of tabsNav.buttons) {
       const t = b.querySelector('span')?.textContent ?? '';
       b.hidden = t !== '设置' && st.headHide.includes(t);
-      b.style.order = siteIdx.has(t) ? String(order.indexOf(t)) : '30';
+      b.style.order = personal || siteIdx.has(t) ? String(order.indexOf(t)) : '30';
     }
-    tabsNav.el.querySelectorAll<HTMLElement>('.et-sep').forEach((x) => { x.style.order = '20'; x.hidden = tabsNav.buttons.every((b) => b.hidden || !siteIdx.has(b.querySelector('span')?.textContent ?? '')); });
+    tabsNav.el.querySelectorAll<HTMLElement>('.et-sep').forEach((x) => { x.style.order = '20'; x.hidden = personal || tabsNav.buttons.every((b) => b.hidden || !siteIdx.has(b.querySelector('span')?.textContent ?? '')); });
     tabsNav.el.querySelector<HTMLElement>('.et-thumb')?.style.setProperty('order', '-1');
   };
   loadSettings().then(applyPrefs).catch(() => {});
@@ -133,8 +138,10 @@ export function createHeader(o: { tabs: TabItem[]; onTheme: () => void; onSearch
     every(120_000, poll);
     // 消息在别的标签页被读掉：立刻按服务端真值对齐（隐藏页也更新，切回来不会挂着旧数字）
     onMsgRead(() => pollMsg(true));
-    // 切回标签页时刷新一次（30 秒内刚问过就不重复问）
-    document.addEventListener('visibilitychange', () => { if (Date.now() - polled > 30_000) poll(); });
+    // 刚在别的标签读完消息也要更新；只合并同一次恢复触发的 focus / visibility 事件。
+    const onReturn = () => { if (Date.now() - polled > 500) poll(); };
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) onReturn(); });
+    addEventListener('focus', onReturn);
   }).catch(() => {});
 
   const setMsgRemind = (on: boolean) => {

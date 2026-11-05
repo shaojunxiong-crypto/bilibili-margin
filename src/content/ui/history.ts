@@ -1,4 +1,5 @@
 import type { Settings } from '../../shared/settings';
+import { openBili } from '../navigation';
 import { nav } from '../api/http';
 import { clearHistory, deleteHistory, historyList, historyPaused, historySearch, setHistoryPaused, type Cursor, type HistItem, type HistKind } from '../api/history';
 import { bvidFromHref } from '../tags';
@@ -216,7 +217,7 @@ function upLink(name: string, mid: number): HTMLElement {
   el.setAttribute('role', 'link');
   el.tabIndex = 0;
   el.title = `${name} 的个人空间`;
-  const go = (e: Event) => { e.preventDefault(); e.stopPropagation(); window.open(`https://space.bilibili.com/${mid}`, '_blank', 'noopener'); };
+  const go = (e: Event) => { e.preventDefault(); e.stopPropagation(); openBili(`https://space.bilibili.com/${mid}`, '_blank', 'noopener', e instanceof MouseEvent || e instanceof KeyboardEvent ? e : undefined); };
   el.addEventListener('click', go);
   el.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(e); });
   return el;

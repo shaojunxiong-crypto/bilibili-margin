@@ -23,6 +23,7 @@ export function segmented<T extends string>(options: [T, string][], value: T, on
   const now = () => { if (visible()) place(); };
   wrap.set = (v: T) => {
     const cur = btns.find((b) => b.getAttribute('aria-checked') === 'true')?.dataset.v;
+    if (cur === v) return;
     btns.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.v === v)));
     if (ready && cur !== v && !queued) queued = requestAnimationFrame(() => { queued = 0; now(); });
   };
@@ -70,7 +71,7 @@ export function chipInput(values: string[], placeholder: string, onChange: (v: s
     else if (e.key === 'Backspace' && !input.value && list.length) { list.pop(); render(); onChange(list); input.focus(); }
   });
   input.addEventListener('blur', add);
-  wrap.set = (v) => { list = [...v]; render(); };
+  wrap.set = (v) => { if (v.length === list.length && v.every((s, i) => s === list[i])) return; list = [...v]; render(); };
   render();
   return wrap;
 }
@@ -87,16 +88,17 @@ export function stepSlider(steps: number[], value: number, fmt: (n: number) => s
   return h('div', { class: 'slider' }, range, out);
 }
 
-export function rangeSlider(value: number, fmt: (n: number) => string, onChange: (v: number) => void, label = ''): HTMLElement {
+export function rangeSlider(value: number, fmt: (n: number) => string, onChange: (v: number) => void, label = '', onPreview?: (v: number) => void): HTMLElement {
   const out = h('output', {}, fmt(value));
   const range = h('input', { type: 'range', min: 0, max: 100, step: 1, value: Math.round(value * 100), 'aria-label': label || undefined, 'aria-valuetext': fmt(value) });
   const paint = () => range.style.setProperty('--p', `${range.value}%`);
-  range.addEventListener('input', () => { out.textContent = fmt(Number(range.value) / 100); range.setAttribute('aria-valuetext', out.textContent); paint(); onChange(Number(range.value) / 100); });
+  range.addEventListener('input', () => { out.textContent = fmt(Number(range.value) / 100); range.setAttribute('aria-valuetext', out.textContent); paint(); onPreview?.(Number(range.value) / 100); });
+  range.addEventListener('change', () => onChange(Number(range.value) / 100));
   paint();
   return h('div', { class: 'slider' }, range, out);
 }
 
-export function row(label: string, hint: string | null, control: Node): HTMLElement {
+export function row(label: string, hint: string | Node | null, control: Node): HTMLElement {
   return h('div', { class: 'row' }, h('div', { class: 'row-label' }, h('span', {}, label), hint ? h('small', {}, hint) : null), control);
 }
 

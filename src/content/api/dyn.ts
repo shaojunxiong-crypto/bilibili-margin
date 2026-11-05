@@ -2,9 +2,10 @@
 import { getJSON, postForm, postJSON } from './http';
 
 /** 一条动态，抽成渲染需要的最小结构 */
+export interface DynText { text: string; emoji?: string }
 export interface Dyn {
   id: string; type: string; author: string; face: string; mid: number; ts: number; time: string;
-  text: string; title?: string;
+  text: string; richText?: DynText[]; title?: string;
   video?: { bvid: string; title: string; cover: string; dur: string; play: string; desc: string; ad?: boolean };
   pics: string[];
   article?: { title: string; cover: string; desc: string; url: string };
@@ -26,10 +27,17 @@ export function toDyn(it: any): Dyn | null {
   const m = it.modules, a = m.module_author ?? {}, d = m.module_dynamic ?? {}, s = m.module_stat ?? {};
   const major = d.major ?? {};
   const opus = major.opus;
-  const text = (opus?.summary?.text ?? d.desc?.text ?? '').trim();
+  const desc = opus?.summary?.text != null ? opus.summary : d.desc;
+  const text = (desc?.text ?? '').trim();
+  const nodes: DynText[] = (desc?.rich_text_nodes ?? []).map((n: any) => {
+    const emoji = https(n.emoji?.icon_url);
+    return { text: String(n.text ?? n.orig_text ?? n.emoji?.text ?? ''),
+      ...(n.type === 'RICH_TEXT_NODE_TYPE_EMOJI' && /^https:\/\//.test(emoji) ? { emoji } : {}) };
+  });
   const out: Dyn = {
     id: it.id_str, type: it.type, author: a.name ?? '', face: https(a.face), mid: a.mid ?? 0, ts: a.pub_ts ?? 0, time: a.pub_time ?? '',
-    text, title: opus?.title || undefined, pics: [],
+    text, richText: nodes.length && nodes.map((n) => n.text).join('').trim() === text ? nodes : undefined,
+    title: opus?.title || undefined, pics: [],
     stat: { comment: s.comment?.count ?? 0, forward: s.forward?.count ?? 0, like: s.like?.count ?? 0 },
     url: `https://www.bilibili.com/opus/${it.id_str}`,
     liked: s.like?.status === true, cmtType: Number(it.basic?.comment_type) || undefined, cmtOid: it.basic?.comment_id_str || undefined,
@@ -39,6 +47,7 @@ export function toDyn(it: any): Dyn | null {
     const ad = v.is_ad === true || Boolean(v.ad_info) || Boolean(v.business_info) || undefined;
     out.video = { bvid: v.bvid, title: v.title, cover: https(v.cover), dur: v.duration_text ?? '', play: v.stat?.play ?? '', desc: v.desc ?? '', ad };
     out.url = `https://www.bilibili.com/video/${v.bvid}`;
+    if (!out.cmtType && !out.cmtOid && v.aid) { out.cmtType = 1; out.cmtOid = String(v.aid); }
   }
   if (opus?.pics) out.pics = opus.pics.map((p: any) => https(p.url));
   else if (major.draw?.items) out.pics = major.draw.items.map((p: any) => https(p.src));
@@ -119,14 +128,29 @@ export async function dynRepost(id: string, text: string): Promise<void> {
     web_repost_src: { dyn_id_str: id },
   }, { platform: 'web' });
 }
-export interface Reply { rpid: number; name: string; face: string; mid: number; text: string; like: number; ts: number; rcount: number }
+/** 列表接口偶尔省略 basic，点开评论时才补详情，不为整页动态预取。 */
+export async function dynCommentTarget(d: Dyn): Promise<{ type: number; oid: string } | null> {
+  if (d.cmtType && d.cmtOid) return { type: d.cmtType, oid: d.cmtOid };
+  const detail = await getJSON<any>('/x/polymer/web-dynamic/v1/detail', { id: d.id });
+  const item = toDyn(detail.item);
+  if (!item?.cmtType || !item.cmtOid) return null;
+  d.cmtType = item.cmtType; d.cmtOid = item.cmtOid;
+  return { type: item.cmtType, oid: item.cmtOid };
+}
+
+export interface Reply { rpid: number; name: string; face: string; mid: number; text: string; richText?: DynText[]; like: number; ts: number; rcount: number }
 /** 热门评论第一页（旧版 /x/v2/reply 不要 wbi 签名） */
 export async function dynReplies(type: number, oid: string, ps = 8): Promise<{ list: Reply[]; count: number }> {
   const d = await getJSON<any>('/x/v2/reply', { type, oid, sort: 1, ps, pn: 1 });
   const seen = new Set<number>();
-  const list = [...(d.upper?.top ? [d.upper.top] : []), ...(d.replies ?? [])].filter((r: any) => !seen.has(r.rpid) && seen.add(r.rpid)).slice(0, ps).map((r: any) => ({
+  const list = [...(d.top_replies ?? []), ...(d.upper?.top ? [d.upper.top] : []), ...(d.replies ?? [])].filter((r: any) => !seen.has(r.rpid) && seen.add(r.rpid)).slice(0, ps).map((r: any) => ({
     rpid: r.rpid, name: r.member?.uname ?? '', face: https(r.member?.avatar), mid: Number(r.mid) || 0,
-    text: r.content?.message ?? '', like: r.like ?? 0, ts: r.ctime ?? 0, rcount: r.rcount ?? 0,
+    text: r.content?.message ?? '',
+    richText: String(r.content?.message ?? '').split(/(\[[^\]\r\n]+\])/g).filter(Boolean).map((text) => {
+      const emoji = https(r.content?.emote?.[text]?.url);
+      return { text, ...(/^https:\/\//.test(emoji) ? { emoji } : {}) };
+    }),
+    like: r.like ?? 0, ts: r.ctime ?? 0, rcount: r.rcount ?? 0,
   }));
   return { list, count: d.page?.acount ?? d.page?.count ?? list.length };
 }

@@ -11,5 +11,6 @@ import footprint from './05-footprint.css?inline';
 import watch from './06-watch.css?inline';
 import overlays from './07-overlays.css?inline';
 import home_search from './08-home-search.css?inline';
+import appearance from './09-appearance.css?inline';
 
-export default [base, header, cards, glass_folder, footprint, watch, overlays, home_search].join('');
+export default [base, header, cards, glass_folder, footprint, watch, overlays, home_search, appearance].join('');

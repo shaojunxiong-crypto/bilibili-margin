@@ -21,7 +21,7 @@
   isolation: isolate;
 }
 .app[data-theme="dark"] .gf-root { --gf-ink: #f5f5f7; --gf-ink-soft: rgba(245, 245, 247, .58); }
-.gf-root:hover, .gf-root:focus-within { --gf-hinge: .95; --gf-lift: -34px; --gf-spread: 8px; --gf-fan: 1.4deg; --gf-stack: 10px; }
+.gf-root:hover, .gf-root:focus-within { --gf-hinge: .86; --gf-lift: -96px; --gf-spread: 16px; --gf-fan: 3.2deg; --gf-stack: 30px; }
 /* 扇形收窄：最外侧那张转完也不越过文件夹左右边，不压到旁边的卡 */
 .gf-root[data-open] { --gf-hinge: .86; --gf-lift: -96px; --gf-spread: 16px; --gf-fan: 3.2deg; --gf-stack: 30px; }
 
@@ -374,7 +374,7 @@ canvas.gf-sheet-art[data-ready] { opacity: 1; filter: none; }
 .gf-key--more[aria-expanded="true"] { transform: scale(.96); }
 .gf-glyph { display: block; max-width: none; fill: none; stroke: currentColor; stroke-linecap: round; }
 .gf-glyph--plus { width: 26px; height: 26px; stroke-width: 1.6; animation: gf-turn .6s var(--gf-spring); }
-.gf-glyph--more { width: 30px; height: 12px; stroke-width: 1.7; }
+.gf-glyph--more { width: 20px; height: 20px; }
 @keyframes gf-turn { from { rotate: -90deg; } to { rotate: 0deg; } }
 
 /* ---- menu ------------------------------------------------------------------- */

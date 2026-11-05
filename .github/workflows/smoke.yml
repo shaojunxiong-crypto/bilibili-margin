@@ -24,11 +24,45 @@ jobs:
       - run: npm run build
       - name: Space drawer regressions
         run: npm run test:drawers
+      - name: Application window navigation
+        run: npm run test:app-window
+      - name: Community advertisement skipping
+        run: npm run test:sponsor-skip
+      - name: Background frame pacing
+        run: npm run test:frame-budget
+      - name: UI interaction performance
+        run: npm run test:performance-ui
+        env:
+          SMOKE_OUT: smoke-artifacts/performance-ui
+      - name: Private message images and emojis
+        run: npm run test:message-media
+        env:
+          SMOKE_OUT: smoke-artifacts/message-media
+      - name: Session loading and cached history
+        run: npm run test:message-loading
+        env:
+          SMOKE_OUT: smoke-artifacts/message-loading
+      - name: Transparent header over high-contrast backgrounds
+        run: npm run test:header-surface
+        env:
+          SMOKE_OUT: smoke-artifacts/header-surface
       - name: Smoke test (offline mocked bilibili)
         run: npm run test:smoke
         env:
           SMOKE_BUNDLED: '1'
           SMOKE_OUT: smoke-artifacts
+      - name: Dashboard, settings, wide title and space collections regressions
+        run: npm run test:reported-issues
+        env:
+          SMOKE_OUT: smoke-artifacts/reported-issues
+      - name: Native share button sizing
+        run: npm run test:watch-share
+        env:
+          SMOKE_OUT: smoke-artifacts/watch-share
+      - name: Player loading corners and hydration-safe card startup
+        run: |
+          SMOKE_OUT=smoke-artifacts/watch-startup node tests/watch-startup.mjs
+          SMOKE_OUT=smoke-artifacts/watch-card-startup node tests/watch-card-startup.mjs
       - if: always()
         uses: actions/upload-artifact@v4
         with:

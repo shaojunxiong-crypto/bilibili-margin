@@ -8,6 +8,16 @@ export interface SpaceInfo {
   likes: number; views: number; isFollowing: boolean; videoCount: number;
 }
 
+/** 直播状态独立加载，资料接口回退或统计请求较慢时也能显示开播入口。 */
+export async function spaceLive(mid: number): Promise<number | null> {
+  const response = await fetch(`https://api.live.bilibili.com/room/v1/Room/getRoomInfoOld?mid=${mid}`, { credentials: 'omit' });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const { code, data, message } = await response.json();
+  if (code !== 0) throw new Error(message || `code ${code}`);
+  const room = Number(data?.roomid);
+  return Number(data?.liveStatus) === 1 && Number.isSafeInteger(room) && room > 0 ? room : null;
+}
+
 /** 图片地址补全：// 开头、http:、以及 acc/info 老字段 top_photo 那种不带域名的 bfs/space/xxx.png（v0.47：空间头图不显示） */
 const https = (u: unknown) => {
   const s = String(u ?? '').trim();
@@ -16,34 +26,69 @@ const https = (u: unknown) => {
   return s.replace(/^\/\//, 'https://').replace(/^http:/, 'https:');
 };
 
-export async function spaceInfo(mid: number): Promise<SpaceInfo> {
-  const [acc0, rel, up, nav] = await Promise.all([
-    getWbi<any>('/x/space/wbi/acc/info', { mid }).catch((e) => { console.warn('[MARGIN] acc/info', e); return null; }),
+export async function spaceInfo(mid: number, onBasic?: (info: SpaceInfo) => void): Promise<SpaceInfo> {
+  const stats = Promise.all([
     getJSON<any>('/x/relation/stat', { vmid: mid }).catch(() => null),
     getJSON<any>('/x/space/upstat', { mid }).catch(() => null),
     getJSON<any>('/x/space/navnum', { mid }).catch(() => null),
   ]);
+  const acc0 = await getWbi<any>('/x/space/wbi/acc/info', { mid }).catch((e) => { console.warn('[MARGIN] acc/info', e); return null; });
   // acc/info 被风控（-352 / -403）时退回 web-interface/card：名字、头像、签名、头图都有（v0.47）
   let acc = acc0;
   let card: any = null;
-  if (!acc?.name || !(acc.top_photo_v2?.l_img || acc.top_photo)) card = await getJSON<any>('/x/web-interface/card', { mid, photo: 'true' }).catch(() => null);
+  if (!acc?.name) card = await getJSON<any>('/x/web-interface/card', { mid, photo: 'true' }).catch(() => null);
   if (!acc?.name) {
     const c = card?.card;
     if (!c) throw new Error('资料接口暂时不可用');
     acc = { name: c.name, face: c.face, sign: c.sign, level: c.level_info?.current_level, official: { title: c.Official?.title }, vip: c.vip, is_followed: card.following };
   }
   const banner = acc.top_photo_v2?.l_img || acc.top_photo || card?.space?.l_img || card?.space?.s_img;
-  return {
+  const basic: SpaceInfo = {
     mid, name: acc.name, face: https(acc.face), sign: acc.sign ?? '', level: acc.level ?? 0,
     banner: https(banner),
     official: acc.official?.title ?? '', vip: acc.vip?.label?.text ?? '',
-    following: rel?.following ?? 0, follower: rel?.follower ?? 0,
-    likes: up?.likes ?? 0, views: up?.archive?.view ?? 0,
-    isFollowing: !!acc.is_followed, videoCount: nav?.video ?? 0,
+    following: 0, follower: 0, likes: 0, views: 0,
+    isFollowing: !!acc.is_followed, videoCount: 0,
   };
+  // 名字、头像与操作入口不等待粉丝数、获赞、投稿数量等独立统计。
+  onBasic?.(basic);
+  const bannerFallback = banner || card ? Promise.resolve(card) : getJSON<any>('/x/web-interface/card', { mid, photo: 'true' }).catch(() => null);
+  const [[rel, up, nav], bannerCard] = await Promise.all([stats, bannerFallback]);
+  return { ...basic, banner: https(banner || bannerCard?.space?.l_img || bannerCard?.space?.s_img), following: rel?.following ?? 0, follower: rel?.follower ?? 0,
+    likes: up?.likes ?? 0, views: up?.archive?.view ?? 0, videoCount: nav?.video ?? 0 };
 }
 
 export type VideoOrder = 'pubdate' | 'click';
+
+export interface SpaceCollection {
+  id: number; kind: 'season' | 'series'; name: string; cover: string; total: number;
+}
+
+export async function spaceCollections(mid: number, page: number): Promise<{ list: SpaceCollection[]; total: number }> {
+  const d = await getJSON<any>('/x/polymer/web-space/seasons_series_list', { mid, page_num: page, page_size: 20 });
+  const items = d.items_lists;
+  const list: SpaceCollection[] = [];
+  for (const [kind, entries] of [['season', items.seasons_list], ['series', items.series_list]] as const) {
+    for (const entry of entries ?? []) {
+      const meta = entry.meta;
+      list.push({ id: Number(kind === 'season' ? meta.season_id : meta.series_id), kind,
+        name: meta.name, cover: https(meta.cover || entry.archives?.[0]?.pic), total: Number(meta.total) || 0 });
+    }
+  }
+  return { list, total: items.page?.total ?? list.length };
+}
+
+export async function spaceCollectionVideos(mid: number, collection: SpaceCollection, page: number): Promise<{ list: Video[]; total: number }> {
+  const d = collection.kind === 'season'
+    ? await getJSON<any>('/x/polymer/web-space/seasons_archives_list', { mid, season_id: collection.id, page_num: page, page_size: 30, sort_reverse: 'false' })
+    : await getJSON<any>('/x/series/archives', { mid, series_id: collection.id, pn: page, ps: 30, only_normal: 'true', sort: 'asc' });
+  const list: Video[] = (d.archives ?? []).map((v: any) => ({
+    bvid: v.bvid || `av${v.aid}`, cid: 0, title: v.title, cover: https(v.pic), duration: Number(v.duration) || 0,
+    author: v.owner?.name ?? '', mid: v.owner?.mid ?? v.upMid ?? mid, face: https(v.owner?.face),
+    views: v.stat?.view ?? 0, danmaku: v.stat?.danmaku ?? 0, pubdate: v.pubdate ?? v.ctime ?? 0,
+  }));
+  return { list, total: d.page?.total ?? d.meta?.total ?? collection.total };
+}
 
 export async function spaceVideos(mid: number, pn: number, order: VideoOrder, keyword = ''): Promise<{ list: Video[]; total: number }> {
   const d = await getWbi<any>('/x/space/wbi/arc/search', { mid, ps: 30, pn, order, tid: 0, keyword, order_avoided: 'true', platform: 'web', web_location: 1550101 });

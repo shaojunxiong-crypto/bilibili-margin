@@ -21,7 +21,8 @@
     "storage"
   ],
   "host_permissions": [
-    "https://app.bilibili.com/*"
+    "https://app.bilibili.com/*",
+    "https://bsbsb.top/*"
   ],
   "background": {
     "service_worker": "background.js"

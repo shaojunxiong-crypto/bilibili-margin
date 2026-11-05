@@ -53,7 +53,7 @@ function barcode(mid: number): HTMLElement {
 }
 
 // 设置「账号卡片可拖拽」（v0.46，B 站评论建议）：关掉后卡片固定挂着，只能点击翻面
-let idDrag = true;
+let idDrag = false;
 // 消息提醒（v0.47）：关闭后账号卡片不再请求未读总数和新动态
 let msgRemind = true;
 const msgCards = new Set<(on: boolean) => void>();
@@ -305,7 +305,7 @@ function mountCard(a: Account, wrap: HTMLElement, trigger: HTMLElement, face: (p
     cardX = last.x - cardW / 2; cardY = last.y - HOLE_Y;
     card.style.transform = `translate3d(${cardX.toFixed(2)}px,${cardY.toFixed(2)}px,0) rotate(${angle.toFixed(4)}rad) scale(${CARD_SCALE})`;
   };
-  let hovering = false, lastMx = '', lastMy = '';
+  let hovering = false, overControl = false, lastMx = '', lastMy = '';
   const updateTilt = () => {
     flipCurrent += (flipTarget - flipCurrent) * 0.16;
     const over = !dragging && mouse.x > -1000;
@@ -314,7 +314,9 @@ function mountCard(a: Account, wrap: HTMLElement, trigger: HTMLElement, face: (p
       const dx = Math.max(-1, Math.min(1, (mouse.x - cx) / (cardW / 2)));
       const dy = Math.max(-1, Math.min(1, (mouse.y - cy) / (cardH / 2)));
       // v0.49：固定模式（默认）不再跟着鼠标倾斜，只保留高光（B 站评论：卡片动效没必要）
-      if (stage.classList.contains('idcl-fixed')) { tiltTarget.x = 0; tiltTarget.y = 0; } else { tiltTarget.y = dx * MAX_TILT; tiltTarget.x = -dy * MAX_TILT; }
+      if (stage.classList.contains('idcl-fixed')) { tiltTarget.x = 0; tiltTarget.y = 0; }
+      else if (overControl) { tiltTarget.x = tiltCurrent.x; tiltTarget.y = tiltCurrent.y; }
+      else { tiltTarget.y = dx * MAX_TILT; tiltTarget.x = -dy * MAX_TILT; }
       const mx = `${Math.round(Math.max(0, Math.min(100, ((mouse.x - cardX) / cardW) * 100)))}%`;
       const my = `${Math.round(Math.max(0, Math.min(100, ((mouse.y - cardY) / cardH) * 100)))}%`;
       if (mx !== lastMx) { card.style.setProperty('--mx', mx); lastMx = mx; }
@@ -335,7 +337,18 @@ function mountCard(a: Account, wrap: HTMLElement, trigger: HTMLElement, face: (p
     return Math.abs(flipTarget - flipCurrent) < 0.05 && Math.abs(tiltTarget.x - tiltCurrent.x) + Math.abs(tiltTarget.y - tiltCurrent.y) < 0.01;
   };
   const loop = () => {
-    updatePoints(); applyConstraints(); positionCard(); drawChain(); updateTilt();
+    if (stage.classList.contains('idcl-fixed')) {
+      // 固定模式不参与重力求解，否则即使初速度为零，约束误差仍会把卡片慢慢拉走。
+      const dx = restX - anchor.x, dy = Math.sqrt(Math.max(0, restLen ** 2 - dx * dx));
+      points.forEach((p, i) => {
+        const k = i / (NUM_POINTS - 1);
+        p.x = p.oldx = anchor.x + dx * k; p.y = p.oldy = anchor.y + dy * k;
+      });
+    } else if (overControl && !dragging) {
+      // 链接下方的卡片不继续滑动或倾斜，避免光标在链接与拖拽表面间反复切换。
+      for (const p of points) { p.oldx = p.x; p.oldy = p.y; }
+    } else { updatePoints(); applyConstraints(); }
+    positionCard(); drawChain(); updateTilt();
     still = settled() ? still + 1 : 0;
     raf = still > 20 ? 0 : requestAnimationFrame(loop);
   };
@@ -345,8 +358,9 @@ function mountCard(a: Account, wrap: HTMLElement, trigger: HTMLElement, face: (p
   const pos = (e: PointerEvent) => ({ x: e.clientX, y: e.clientY });
   card.addEventListener('pointerdown', (e) => {
     if ((e.target as HTMLElement).closest('a, button')) return;
+    overControl = false;
     e.preventDefault();
-    if (!idDrag) { downPos = pos(e); tapDown = true; return; }
+    if (stage.classList.contains('idcl-fixed')) { downPos = pos(e); tapDown = true; return; }
     dragging = true; wake();
     if (!interacted) { interacted = true; hint.classList.add('idcl-hint-hidden'); localStorage.setItem(HINT_KEY, '1'); }
     card.setPointerCapture(e.pointerId);
@@ -371,6 +385,7 @@ function mountCard(a: Account, wrap: HTMLElement, trigger: HTMLElement, face: (p
     if (!e.isTrusted) return; // 页面脚本派发的合成事件不算
     wake();
     mouse = pos(e);
+    overControl = !dragging && e.composedPath().some((n) => n instanceof Element && card.contains(n) && !!n.closest('a, button'));
     if (!dragging) {
       const out = !inside(mouse.x, mouse.y);
       if (out && !away) scheduleClose();
@@ -403,7 +418,7 @@ function mountCard(a: Account, wrap: HTMLElement, trigger: HTMLElement, face: (p
     if (away) scheduleClose();
   };
   // 鼠标离开窗口时只取消倾斜；回到页面并移出范围时再收起
-  const onOut = () => { mouse = { x: -9999, y: -9999 }; wake(); };
+  const onOut = () => { mouse = { x: -9999, y: -9999 }; overControl = false; wake(); };
 
   /* ── 打开 / 收起：在头像上停 200ms 才垂下（划过不弹），，离开头像和卡片 .4s 后收起 ── */
   let loaded = false;
@@ -411,6 +426,7 @@ function mountCard(a: Account, wrap: HTMLElement, trigger: HTMLElement, face: (p
     clearTimeout(t);
     if (isOpen) return;
     isOpen = true;
+    overControl = false;
     away = false;
     if (!stage.isConnected) (wrap.closest('.app') ?? wrap.getRootNode() as ShadowRoot).append(stage);
     resize();
@@ -476,10 +492,7 @@ function mountCard(a: Account, wrap: HTMLElement, trigger: HTMLElement, face: (p
 }
 
 function svgCheck(): SVGElement {
-  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  s.setAttribute('viewBox', '0 0 24 24');
-  setMarkup(s, '<path d="M4 12l5 5L20 6" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>');
-  return s;
+  return icon(ICONS.check) as SVGElement;
 }
 
 export { account };

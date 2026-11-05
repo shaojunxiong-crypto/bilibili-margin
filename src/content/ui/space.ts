@@ -1,5 +1,5 @@
 import type { Settings } from '../../shared/settings';
-import { block, follow, followTags, setUserTags, userTags, spaceInfo, spaceRecent, spaceVideos, type SpaceInfo, type VideoOrder } from '../api/space';
+import { block, follow, followTags, setUserTags, userTags, spaceInfo, spaceLive, spaceRecent, spaceVideos, spaceCollections, spaceCollectionVideos, type SpaceCollection, type SpaceInfo, type VideoOrder } from '../api/space';
 import { spaceDynamics } from '../api/dyn';
 import { videoCard, skeleton } from './card';
 import { dynCard, dynData } from './dyn';
@@ -15,8 +15,9 @@ import { createHistoryDrawer } from './history-drawer';
 import { account } from '../api/account';
 import { targetOfVideo, targetOfDyn } from '../filter-targets';
 import type { FilterTarget } from '../filter';
+import { openBili } from '../navigation';
 
-type Tab = 'video' | 'dynamic' | 'coin' | 'like';
+type Tab = 'video' | 'dynamic' | 'coin' | 'like' | 'collections';
 type Layout = 'grid' | 'list';
 const LAYOUT_KEY = 'margin:space-layout';
 
@@ -24,9 +25,9 @@ const LAYOUT_KEY = 'margin:space-layout';
 type LocalDrawers = { fav: { open: () => void }; hist: { open: () => void }; later: { open: () => void } };
 let local: LocalDrawers | null = null;
 /** 空间页自己的三个抽屉：挂在页面根节点上，不依赖顶层 Shell */
-function drawers(root: HTMLElement): LocalDrawers {
+function drawers(root: HTMLElement, getSettings: () => Settings): LocalDrawers {
   if (local) return local;
-  const fav = createFavorites(() => { /* 空间页不做悬停预览 */ });
+  const fav = createFavorites(() => { /* 空间页不做悬停预览 */ }, () => getSettings().favDirect);
   const hist = createHistoryDrawer();
   const later = createLaterDrawer(() => root);
   root.append(fav.el, hist.el, later.el);
@@ -48,6 +49,8 @@ export class SpaceApp {
   private sentinel!: HTMLElement;
   private sort!: HTMLElement;
   private layoutSeg!: HTMLElement;
+  private collection: SpaceCollection | null = null;
+  private collectionHead!: HTMLElement;
   private layout: Layout = (localStorage.getItem(LAYOUT_KEY) as Layout) === 'list' ? 'list' : 'grid';
   private info: SpaceInfo | null = null;
   /** 投稿搜索词（v0.47，评论区：进了 UP 主页没法搜他的视频） */
@@ -74,10 +77,10 @@ export class SpaceApp {
       b.dataset.tab = id;
       return b;
     };
-    tabs.append(mk('video', '视频'), mk('dynamic', '动态'));
+    tabs.append(mk('video', '视频'), mk('collections', '合集和系列'), mk('dynamic', '动态'));
     const input = h('input', { type: 'search', class: 'sp-q-in', placeholder: '搜索 TA 的视频', 'aria-label': '搜索 TA 的视频', autocomplete: 'off' }) as HTMLInputElement;
     let qt = 0;
-    const apply = () => { const v = input.value.trim(); if (v === this.q) return; this.q = v; this.reload(); };
+    const apply = () => { const v = input.value.trim(); if (v === this.q) return; this.q = v; if (this.tab === 'video') this.reload(); };
     input.addEventListener('input', () => { clearTimeout(qt); qt = window.setTimeout(apply, 400); });
     input.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { clearTimeout(qt); apply(); } if (e.key === 'Escape') { input.value = ''; clearTimeout(qt); apply(); } });
     this.searchBox = h('label', { class: 'sp-q' }, icon(ICONS.search), input);
@@ -89,13 +92,21 @@ export class SpaceApp {
     this.list = h('section', { class: 'grid' });
     this.status = h('div', { class: 'status' });
     this.sentinel = h('div', { class: 'sentinel' });
+    this.collectionHead = h('div', { class: 'sp-collection-head', hidden: true });
     attachPreview(this.list, () => s.settings.hoverPreview);
     // 吸顶时标签变成和首页一样的玻璃胶囊，不再直接压在封面上（v0.47.1）
     const barMark = h('div', { class: 'bar-mark', 'aria-hidden': 'true' });
-    s.main.append(hero, barMark, bar, this.list, this.status, this.sentinel);
+    s.main.append(hero, barMark, bar, this.collectionHead, this.list, this.status, this.sentinel);
     new IntersectionObserver(([e]) => { bar.classList.toggle('stuck', !e.isIntersecting && e.boundingClientRect.top < 80); }, { root: s.app, rootMargin: '-72px 0px 0px 0px', threshold: 0 }).observe(barMark);
 
-    spaceInfo(this.mid).then((info) => { this.info = info; hero.replaceWith(this.hero(info)); document.title = `${info.name} · 映间`; this.paintTabs(tabs); })
+    let profile: HTMLElement | null = null;
+    spaceInfo(this.mid, (info) => {
+      this.info = info; profile = this.hero(info); hero.replaceWith(profile); document.title = `${info.name} · 映间`;
+    }).then((info) => {
+      this.info = info; profile?.querySelector('.sp-stats')?.replaceWith(this.stats(info)); this.paintTabs(tabs);
+      const banner = profile?.querySelector<HTMLElement>('.sp-banner');
+      if (banner && info.banner) { banner.style.setProperty('--img', `url("${info.banner}@1600w.webp")`); banner.classList.add('has'); }
+    })
       .catch((e) => hero.replaceWith(h('section', { class: 'sp-hero' }, h('div', { class: 'sp-banner' }), h('div', { class: 'sp-id' }, h('div', { class: 'sp-who' }, h('h1', {}, `UID ${this.mid}`), h('p', { class: 'sp-sign' }, `资料加载失败：${(e as Error).message}`))))));
     new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) this.load(); }, { root: s.app, rootMargin: '900px 0px' }).observe(this.sentinel);
     this.shell.filter.onChange(() => this.applyFilters());
@@ -137,6 +148,11 @@ export class SpaceApp {
   }
 
   private hero(i: SpaceInfo): HTMLElement {
+    const avatar = h('div', { class: 'sp-avatar' }, h('img', { class: 'sp-face', src: `${i.face}@120w_120h_1c.webp`, alt: '', referrerpolicy: 'no-referrer' }));
+    void spaceLive(i.mid).then((room) => {
+      if (!room || !avatar.isConnected) return;
+      avatar.append(h('a', { class: 'sp-live', href: `https://live.bilibili.com/${room}`, target: '_blank', rel: 'noopener', 'aria-label': `进入 ${i.name} 的直播间` }, '直播中'));
+    }).catch(() => { /* 可选直播状态失败时保留资料与操作入口。 */ });
     const followBtn = h('button', { class: `sp-follow${i.isFollowing ? ' on' : ''}`, type: 'button' }, i.isFollowing ? '已关注' : '+ 关注');
     // v0.49：已关注时点按钮弹菜单（设置分组 / 取消关注），不再一点就取关；关注成功后直接弹出分组；「⋯」里可以拉黑
     const menu = h('div', { class: 'sp-menu', role: 'menu', hidden: '' });
@@ -174,7 +190,7 @@ export class SpaceApp {
     followBtn.setAttribute('aria-haspopup', 'menu');
     followBtn.addEventListener('click', async () => {
       const token = csrf();
-      if (!token) { window.open('https://passport.bilibili.com/login', '_blank', 'noopener'); return; }
+      if (!token) { openBili('https://passport.bilibili.com/login'); return; }
       if (followBtn.classList.contains('on')) {
         if (!menu.hidden) { closeMenu(); return; }
         openMenu([
@@ -196,11 +212,11 @@ export class SpaceApp {
       setFollowing(true);
       groups();
     });
-    const moreBtn = h('button', { class: 'sp-more', type: 'button', 'aria-label': '更多操作', 'aria-haspopup': 'menu', title: '更多' }, icon('<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'));
+    const moreBtn = h('button', { class: 'sp-more', type: 'button', 'aria-label': '更多操作', 'aria-haspopup': 'menu', title: '更多' }, icon(ICONS.more));
     moreBtn.addEventListener('click', () => {
       if (!menu.hidden) { closeMenu(); return; }
       const token = csrf();
-      if (!token) { window.open('https://passport.bilibili.com/login', '_blank', 'noopener'); return; }
+      if (!token) { openBili('https://passport.bilibili.com/login'); return; }
       openMenu([item(`拉黑 ${i.name}`, async () => {
         closeMenu();
         if (!confirm(`确定把 ${i.name} 加入黑名单？拉黑后对方不能关注你、给你发私信和评论。`)) return;
@@ -210,10 +226,6 @@ export class SpaceApp {
       }, true)]);
       (menu.querySelector('button') as HTMLElement | null)?.focus();
     });
-    const stat = (n: number, label: string, href?: string) => {
-      const inner = [h('b', {}, fmtCount(n)), h('span', {}, label)];
-      return href ? h('a', { class: 'sp-stat', href, target: '_blank', rel: 'noopener' }, ...inner) : h('div', { class: 'sp-stat' }, ...inner);
-    };
     const acts = h('div', { class: 'sp-acts' },
       followBtn,
       h('a', { class: 'sp-msg', href: `https://message.bilibili.com/#/whisper/mid${i.mid}`, target: '_blank', rel: 'noopener' }, icon(ICONS.message), '私信'),
@@ -224,8 +236,8 @@ export class SpaceApp {
       // 21st「Glass Button」(jahed, 4922)：玻璃胶囊 + 图标底片，hover 微抬。抽屉在这里本地创建，
       // 不依赖 shell（空间页是独立 PageShell，顶层 Shell 可能没构造，panels 为空会导致点了没反应）
       const openPanel = (kind: 'fav' | 'hist' | 'later', fallback: string) => {
-        try { drawers(this.shell.app)[kind].open(); }
-        catch (e) { console.warn('[映间] 抽屉打开失败，退回原页面', e); window.open(fallback, '_blank', 'noopener'); }
+        try { drawers(this.shell.app, () => this.shell.settings)[kind].open(); }
+        catch (e) { console.warn('[映间] 抽屉打开失败，退回原页面', e); openBili(fallback); }
       };
       const tile = (label: string, ic: string, run: () => void) => {
         const b = h('button', {
@@ -252,19 +264,27 @@ export class SpaceApp {
       h('div', { class: 'sp-id' },
         h('div', { class: 'sp-who' },
           h('div', { class: 'sp-kicker' },
-            h('img', { class: 'sp-face', src: `${i.face}@120w_120h_1c.webp`, alt: '', referrerpolicy: 'no-referrer' }),
+            avatar,
             h('div', { class: 'eyebrow' }, h('span', { class: 'en' }, 'Space'), h('span', { class: 'caps' }, `UID ${i.mid}`), h('span', { class: 'no' }, `LV${i.level}`), i.vip ? h('span', { class: 'sp-vip' }, i.vip) : null)),
           h('h1', {}, i.name),
           i.official ? h('p', { class: 'sp-official' }, i.official) : null,
           i.sign ? h('p', { class: 'sp-sign' }, i.sign) : null),
         h('div', { class: 'sp-side' },
-          h('div', { class: 'sp-stats' },
-            stat(i.follower, '粉丝', `https://space.bilibili.com/${i.mid}/fans/fans`),
-            stat(i.following, '关注', `https://space.bilibili.com/${i.mid}/fans/follow`),
-            i.likes ? stat(i.likes, '获赞') : null,
-            i.views ? stat(i.views, '播放') : null),
+          this.stats(null),
           acts)),
     );
+  }
+
+  private stats(i: SpaceInfo | null): HTMLElement {
+    const stat = (n: number | undefined, label: string, href?: string) => {
+      const inner = [h('b', {}, n == null ? '—' : fmtCount(n)), h('span', {}, label)];
+      return href ? h('a', { class: 'sp-stat', href, target: '_blank', rel: 'noopener' }, ...inner) : h('div', { class: 'sp-stat' }, ...inner);
+    };
+    return h('div', { class: 'sp-stats' },
+      stat(i?.follower, '粉丝', `https://space.bilibili.com/${this.mid}/fans/fans`),
+      stat(i?.following, '关注', `https://space.bilibili.com/${this.mid}/fans/follow`),
+      i?.likes ? stat(i.likes, '获赞') : null,
+      i?.views ? stat(i.views, '播放') : null);
   }
 
   /** 列表视图的一行：编号 + 小封面 + 衬线标题 + 右侧小注（21st Editorial service list 的版式） */
@@ -287,18 +307,39 @@ export class SpaceApp {
   private switchTab(t: Tab): void {
     if (t === this.tab) return;
     this.tab = t;
-    history.replaceState(null, '', `/${this.mid}${t === 'dynamic' ? '/dynamic' : ''}`);
+    this.collection = null;
+    history.replaceState(null, '', `/${this.mid}${t === 'dynamic' ? '/dynamic' : t === 'collections' ? '?margin_tab=collections' : ''}`);
     this.applyTabUi();
     this.reload();
   }
 
   private applyTabUi(): void {
     this.shell.main.querySelectorAll<HTMLElement>('.sp-bar .tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === this.tab)));
-    const vid = this.tab !== 'dynamic';
+    const vid = this.tab !== 'dynamic' && (this.tab !== 'collections' || !!this.collection);
     this.sort.hidden = this.tab !== 'video';
     this.searchBox.hidden = this.tab !== 'video';
     this.layoutSeg.hidden = !vid;
-    this.list.className = vid ? (this.layout === 'list' ? 'vlist' : 'grid') : 'dy-list';
+    this.list.className = this.tab === 'dynamic' ? 'dy-list' : vid && this.layout === 'list' ? 'vlist' : 'grid';
+    this.collectionHead.hidden = this.tab !== 'collections' || !this.collection;
+  }
+
+  private collectionCard(c: SpaceCollection): HTMLElement {
+    const open = () => {
+      this.collection = c;
+      this.collectionHead.replaceChildren(
+        h('button', { class: 'ghost small', type: 'button', onclick: () => {
+          this.collection = null; this.reload();
+        } }, icon(ICONS.back), '合集和系列'),
+        h('h2', {}, c.name));
+      this.reload();
+      this.collectionHead.querySelector('button')?.focus({ preventScroll: true });
+    };
+    return h('article', { class: 'card sp-collection', 'data-kind': c.kind },
+      h('button', { class: 'cover', type: 'button', 'aria-label': `打开${c.name}`, onclick: open },
+        c.cover ? h('img', { src: `${c.cover}@640w_360h_1c.webp`, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }) : icon(ICONS.folder),
+        h('span', { class: 'dur' }, `${c.total} 个视频`)),
+      h('button', { class: 'title', type: 'button', onclick: open }, c.name),
+      h('div', { class: 'meta' }, c.kind === 'season' ? '合集' : '系列'));
   }
 
   private reload(): void {
@@ -313,23 +354,33 @@ export class SpaceApp {
   private async load(): Promise<void> {
     if (this.loading || this.done) return;
     this.loading = true;
+    this.status.replaceChildren();
     const gen = this.gen;
     const vid = this.tab !== 'dynamic';
-    const listMode = vid && this.layout === 'list';
+    const listMode = vid && this.layout === 'list' && (this.tab !== 'collections' || !!this.collection);
     const sk = listMode ? h('div', { class: 'vrow sk' }, h('div', { class: 'line' })) : vid ? skeleton(this.list.children.length ? 5 : 15) : h('div', { class: 'dy sk' }, h('div', { class: 'line' }), h('div', { class: 'line' }), h('div', { class: 'line short' }));
     const skNodes = sk instanceof DocumentFragment ? [...sk.childNodes] : [sk];
     this.list.append(sk);
     try {
-      if (this.tab === 'coin' || this.tab === 'like') {
+      if (this.tab === 'collections' && !this.collection) {
+        const r = await spaceCollections(this.mid, this.page);
+        if (gen !== this.gen) return;
+        skNodes.forEach((n) => (n as Element).remove());
+        this.page++;
+        r.list.forEach(c => this.list.append(this.collectionCard(c)));
+        this.done = !r.list.length || this.list.children.length >= r.total;
+        if (!this.list.children.length) this.status.replaceChildren(h('span', {}, '还没有合集或系列'));
+      } else if (this.tab === 'coin' || this.tab === 'like') {
         const list = this.recent[this.tab] ?? (await spaceRecent(this.mid, this.tab)) ?? [];
         if (gen !== this.gen) return;
         skNodes.forEach((n) => (n as Element).remove());
         list.forEach((v, i) => this.list.append(listMode ? this.row(v, i + 1) : videoCard(v, i, { compact: false })));
         this.done = true;
         if (!list.length) this.status.replaceChildren(h('span', {}, '对方没有公开，或者最近没有'));
-      } else if (this.tab === 'video') {
-        const r = await spaceVideos(this.mid, this.page++, this.order, this.q);
+      } else if (this.tab === 'video' || this.collection) {
+        const r = this.collection ? await spaceCollectionVideos(this.mid, this.collection, this.page) : await spaceVideos(this.mid, this.page, this.order, this.q);
         if (gen !== this.gen) return;
+        this.page++;
         skNodes.forEach((n) => (n as Element).remove());
         const start = this.list.children.length;
         r.list.forEach((v, i) => {
@@ -338,7 +389,7 @@ export class SpaceApp {
           this.list.append(card);
         });
         this.done = r.list.length === 0 || this.list.children.length >= r.total;
-        if (!this.list.children.length) this.status.replaceChildren(h('span', {}, this.q ? `没有找到「${this.q}」相关的视频` : '还没有投稿'));
+        if (!this.list.children.length) this.status.replaceChildren(h('span', {}, this.collection ? '暂无公开视频' : this.q ? `没有找到「${this.q}」相关的视频` : '还没有投稿'));
       } else {
         const r = await spaceDynamics(this.mid, this.offset);
         if (gen !== this.gen) return;
@@ -357,11 +408,12 @@ export class SpaceApp {
       if (gen !== this.gen) return;
       skNodes.forEach((n) => (n as Element).remove());
       this.status.replaceChildren(h('span', {}, `加载失败：${(err as Error).message}`), h('button', { class: 'ghost small', type: 'button', onclick: () => this.load() }, '重试'));
+      return;
     } finally {
       if (gen === this.gen) this.loading = false;
     }
     requestAnimationFrame(() => {
-      if (!this.done && !this.loading && this.sentinel.getBoundingClientRect().top < innerHeight + 900) this.load();
+      if (gen === this.gen && !this.done && !this.loading && this.sentinel.getBoundingClientRect().top < innerHeight + 900) this.load();
     });
   }
 }

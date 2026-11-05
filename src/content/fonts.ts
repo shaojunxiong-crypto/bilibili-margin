@@ -4,7 +4,7 @@
  * - Margin Sans SC：思源黑体 Noto Sans SC 可变字重 400–700 子集（OFL）
  * - Instrument Serif（OFL）：标题里的西文与数字、英文眉标的装饰斜体；size-adjust 让它和中文宋体等高
  * - Margin Serif SC：霞鹜新致宋 LXGW Neo ZhiSong 子集（IPA 1.0）
- * 两款中文字体按 unicode-range 切成约 100 片（scripts/slice-fonts.py → fonts/sc/ + fonts/margin-sc.css），
+ * 两款中文字体各分成 34 片，低频组适度合并、常用组独立加载（scripts/slice-fonts.py → fonts/sc/ + fonts/margin-sc.css），
  * 浏览器只下载页面上用到的那几片；切片表在 margin-sc.css 里，用 <link> 引入，不占入口脚本体积。
  * Chrome 不认 shadow root 里的 @font-face，所以注册在 document 上，各处 shadow DOM 都能用。
  */

@@ -75,7 +75,7 @@ Other Chromium browsers (Brave, Opera, Vivaldi, Arc and others) can follow the C
 | Native playback | Redesigned titles, uploader cards, episode lists and recommendations, while retaining the native player, danmaku, comments, quality and fullscreen controls. |
 | Favorites and watch later | Glass folder cards, watch-later lists, viewing progress and video context menus. |
 | Activity | Year and month heatmaps, first opening time and daily usage, viewing-history backfill and data-source labels. |
-| Reading and account pages | Reading layouts for posts, opus articles and columns, plus matching interfaces for spaces, history, feeds and messages. |
+| Reading and account pages | Reading layouts for posts, opus articles and columns, plus matching interfaces for spaces, history, feeds and messages; private chats support image preview/sending and native Bilibili emoji selection. |
 | Appearance | Light, dark and system themes; 13 animated backgrounds, custom images and intensity controls, including Gateway flow and click shockwaves. |
 | Shortcuts | Search suggestions, command palette, hover previews, a flippable profile card and an editable-city weather widget. |
 | Local data | Settings and activity records stored locally, with JSON import and export. |
@@ -98,9 +98,11 @@ Manually loaded extensions need the update steps above; the popup checks for new
 
 ### Do backgrounds keep animating?
 
-Backgrounds remain animated while scrolling and playing videos on a visible page. They pause in hidden tabs and respect reduced-motion preferences. The opening animation temporarily suspends the covered background. Rendering adapts to device and page load; a fixed 60fps is not guaranteed in every scenario. See the [performance notes](docs/performance-v0.31.0.md).
+On visible pages with GPU acceleration, backgrounds remain animated while scrolling, playing videos and opening drawers. They pause in hidden tabs and respect reduced-motion preferences. Software rendering retains a static safeguard to avoid slowing the page. The opening animation temporarily suspends the covered background. Rendering adapts to device and page load; a fixed 60fps is not guaranteed in every scenario. See the [performance notes](docs/performance-v0.31.0.md).
 
 ## Privacy
+
+Community advertisement skipping is off by default. When enabled, it queries [BilibiliSponsorBlock](https://bsbsb.top/) using a four-character BVID hash prefix and skips marked sponsor ranges in ordinary BV videos, with undo. It sends no Bilibili cookies, account identifiers or full video ID to that service and cannot guarantee Bilibili completion metrics.
 
 The developer does not operate an analytics or data-collection server. Settings, activity records and custom background images stay on your device; exported backups are yours to store.
 

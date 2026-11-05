@@ -17,6 +17,11 @@ const check = (name, actual, expected) => {
 try {
   for (const theme of ['light', 'dark']) {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: theme });
+    // 此用例把抽屉源码注入普通页面，补齐原生空间入口新增的设置读取接口。
+    await ctx.addInitScript(() => {
+      globalThis.chrome ??= {};
+      chrome.storage = { local: { get: async () => ({}) }, onChanged: { addListener() {} } };
+    });
     await installMocks(ctx);
     await ctx.route('**/x/web-interface/history/cursor?**', (route) => route.fulfill({ json: { code: 0, data: {
       cursor: null, list: [[-1, 200], [312, 600], [45, 200], [0, 0]].map(([progress, duration], i) => ({

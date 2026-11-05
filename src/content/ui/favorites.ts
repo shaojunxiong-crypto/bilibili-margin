@@ -7,9 +7,11 @@ import type { Video } from '../api/feed';
 import { createSheet, type Sheet } from './sheet';
 import type { FilterRuntime } from '../filter-runtime';
 import { targetOfVideo } from '../filter-targets';
+import { openBili } from '../navigation';
+import { loadSettings,onSettingsChange } from '../../shared/settings';
 
 /** 收藏夹抽屉：玻璃文件夹 → 视频网格（无限加载） */
-export function createFavorites(onRender: (grid: HTMLElement) => void, direct: () => boolean = () => false, filter?: FilterRuntime): Sheet {
+export function createFavorites(onRender: (grid: HTMLElement) => void, direct: () => boolean = () => true, filter?: FilterRuntime): Sheet {
   let loaded = false;
   const shelf = h('div', { class: 'shelf' });
   const grid = h('div', { class: 'grid fav-grid' });
@@ -26,6 +28,9 @@ export function createFavorites(onRender: (grid: HTMLElement) => void, direct: (
   const sheet = createSheet({ title: '收藏夹', eyebrow: 'Favorites', width: 820, onOpen: () => { if (!loaded) init(); } });
   sheet.body.classList.add('fav-body');
   sheet.body.append(shelf, crumb, grid, status, sentinel);
+  const setColumns = (columns:number) => shelf.style.setProperty('--fav-cols',String(columns));
+  loadSettings().then((s) => setColumns(s.favColumns)).catch(() => {});
+  onSettingsChange((next,prev) => { if (next.favColumns !== prev.favColumns) setColumns(next.favColumns); });
   onRender(grid);
 
   async function init() {
@@ -86,7 +91,7 @@ export function createFavorites(onRender: (grid: HTMLElement) => void, direct: (
       onDirect: () => { open(f); requestAnimationFrame(() => crumb.scrollIntoView({ behavior: 'smooth', block: 'start' })); },
       menu: [
         { label: '查看全部视频', onSelect: () => { open(f); crumb.scrollIntoView({ behavior: 'smooth', block: 'start' }); } },
-        { label: '在 B 站打开', onSelect: () => window.open(`https://space.bilibili.com/${f.mid}/favlist?fid=${f.id}`, '_blank', 'noopener') },
+        { label: '在 B 站打开', onSelect: () => openBili(`https://space.bilibili.com/${f.mid}/favlist?fid=${f.id}`) },
         ...(f.isDefault ? [] : [{ label: '删除收藏夹', danger: true, onSelect: () => remove(f) }]),
       ],
     });

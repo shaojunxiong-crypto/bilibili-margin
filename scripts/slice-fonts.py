@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-把两款中文字体（fonts-src/MarginSans-SC.woff2、MarginSerif-SC.woff2）按 unicode-range 切成约 100 片，
+把两款中文字体（fonts-src/MarginSans-SC.woff2、MarginSerif-SC.woff2）按 unicode-range 切片，
 输出到 public/fonts/sc/，并生成 public/fonts/margin-sc.css（每片一条带 unicode-range 的 @font-face，url 相对这个 css）。
 内容脚本只插一个 <link> 指向它，unicode-range 表（约 100KB）不进 content.js。
 浏览器只下载页面上实际出现的字所在的那几片，而不是整份 1.7MB / 1.3MB。
 
 切片方案沿用 Google Fonts 给 Noto Sans SC 的分片（按字频排好的 ~100 组，scripts/cjk-slices.json），
+前 73 个低频组每 8 组合并，减少重复字体结构；常用字组仍独立加载，编号不变。
 字体里有、但不在这些分片里的字统一放进最后一片 rest。
 
   pip install fonttools brotli
@@ -86,18 +87,22 @@ def main():
             left -= cps; parts.append(cps)
         if left: parts.append(left)
         if only and only != key:
-            prev = [l for l in open(CSS).read().split('\n') if f'"{FAMILY[key]}"' in l] if os.path.exists(CSS) else []
+            prev = [l for l in open(CSS, encoding='utf-8').read().split('\n') if f'"{FAMILY[key]}"' in l] if os.path.exists(CSS) else []
             if prev: ts += prev; continue
         for old in os.listdir(OUT):
             if old.startswith(key + '-'): os.remove(os.path.join(OUT, old))
-        jobs = [(src, sorted(cps), os.path.join(OUT, f'{key}-{i:03d}.woff2')) for i, cps in enumerate(parts)]
-        with ProcessPoolExecutor() as ex: list(ex.map(cut, jobs))
+        rare = min(73, len(parts))
+        packed = [(f'{key}-rare-{i // 8:03d}', set().union(*parts[i:min(i + 8, rare)])) for i in range(0, rare, 8)]
+        packed += [(f'{key}-{i:03d}', cps) for i, cps in enumerate(parts) if i >= rare]
+        jobs = [(src, sorted(cps), os.path.join(OUT, f'{name}.woff2')) for name, cps in packed]
+        with ProcessPoolExecutor(max_workers=min(4, os.cpu_count() or 1)) as ex: list(ex.map(cut, jobs))
         rows = []; total = 0
         for (_, cps, path) in jobs:
             total += os.path.getsize(path)
             rows.append('@font-face{font-family:"%s";src:url(sc/%s) format("woff2");font-weight:%s;font-style:normal;font-display:swap;unicode-range:%s}' % (FAMILY[key], os.path.basename(path), WEIGHT[key], fmt_range(cps)))
         ts += rows
-        print(f'{file}: {len(cmap)} glyph codepoints → {len(parts)} slices, {total} bytes (source {os.path.getsize(woff)})')
-    open(CSS, 'w').write('\n'.join(ts) + '\n')
+        print(f'{file}: {len(cmap)} glyph codepoints → {len(jobs)} slices, {total} bytes (source {os.path.getsize(woff)})')
+    open(CSS, 'w', encoding='utf-8', newline='\n').write('\n'.join(ts) + '\n')
 
-main()
+if __name__ == '__main__':
+    main()

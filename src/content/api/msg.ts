@@ -41,7 +41,7 @@ export interface Notice {
   users: Person[]; more: number; time: number;
   verb: string; content: string; quote: string; title: string; image: string; url: string;
 }
-export interface Page { list: Notice[]; cursor: { id: number; time: number } | null; top?: number }
+export interface Page { list: Notice[]; cursor: { id: number; time: number } | null; top?: string }
 export interface Unread { reply: number; at: number; like: number; system: number; chat: number }
 
 /**
@@ -67,8 +67,8 @@ export async function unread(): Promise<Unread> {
   const [a, b] = await Promise.all([
     // v0.48：和 B 站网页顶栏用同一个新接口（旧接口偶尔会多算一条已经读掉的系统通知，B 站评论反馈「永远剩一个」）
     get<any>('https://api.vc.bilibili.com/x/im/web/msgfeed/unread', { build: 0, mobi_app: 'web' })
-      .catch(() => get<any>('https://api.bilibili.com/x/msgfeed/unread')).catch(() => ({})),
-    get<any>('https://api.vc.bilibili.com/session_svr/v1/session_svr/single_unread', { unread_type: 0, show_unfollow_list: 1, show_dustbin: 1 }).catch(() => ({})),
+      .catch(() => get<any>('https://api.bilibili.com/x/msgfeed/unread')),
+    get<any>('https://api.vc.bilibili.com/session_svr/v1/session_svr/single_unread', { unread_type: 0, show_unfollow_list: 1, show_dustbin: 1 }),
   ]);
   return { reply: a.reply ?? 0, at: a.at ?? 0, like: a.like ?? 0, system: a.sys_msg ?? 0, chat: (b.follow_unread ?? 0) + (b.unfollow_unread ?? 0) };
 }
@@ -87,7 +87,7 @@ export async function replies(c: Page['cursor']): Promise<Page> {
 }
 
 export async function ats(c: Page['cursor']): Promise<Page> {
-  const d = await get<any>('https://api.bilibili.com/x/msgfeed/at', c ? { id: c.id, at_time: c.time } : {});
+  const d = await get<any>('https://api.bilibili.com/x/msgfeed/at', { platform:'web', ...(c ? { id:c.id,at_time:c.time } : {}) });
   return {
     list: (d.items ?? []).map((x: any): Notice => ({
       id: x.id, kind: 'at', users: [person(x.user)], more: 0, time: x.at_time,
@@ -99,7 +99,7 @@ export async function ats(c: Page['cursor']): Promise<Page> {
 }
 
 export async function likes(c: Page['cursor']): Promise<Page> {
-  const d = await get<any>('https://api.bilibili.com/x/msgfeed/like', c ? { id: c.id, like_time: c.time } : {});
+  const d = await get<any>('https://api.bilibili.com/x/msgfeed/like', { platform:'web', ...(c ? { id:c.id,like_time:c.time } : {}) });
   const t = d.total ?? {};
   return {
     list: (t.items ?? []).map((x: any): Notice => ({
@@ -118,6 +118,10 @@ function noticeText(raw: unknown): string {
   return t;
 }
 
+function latestSystemCursor(items: any[]): string {
+  return items.reduce((max, x) => { const cursor = String(x?.cursor ?? '0'); return /^\d+$/.test(cursor) && BigInt(cursor) > BigInt(max) ? cursor : max; }, '0');
+}
+
 export async function system(csrf: string, c: Page['cursor']): Promise<Page> {
   // v0.49：B 站消息中心同时拉「个人通知」和「全站公告」（隐私政策修订等）两个接口，以前只拉了前一个，会漏（B 站评论反馈）
   const [d, u] = await Promise.all([
@@ -130,7 +134,6 @@ export async function system(csrf: string, c: Page['cursor']): Promise<Page> {
   });
   const own: Notice[] = (d.system_notify_list ?? []).map((x: any) => conv(x, false));
   const last = own[own.length - 1];
-  const first = d.system_notify_list?.[0];
   const cursor = own.length >= 20 && last ? { id: last.id, time: last.time } : null;
   let list = own;
   if (u?.system_notify_list?.length) {
@@ -138,24 +141,30 @@ export async function system(csrf: string, c: Page['cursor']): Promise<Page> {
     const floor = cursor ? last.time : 0;
     list = [...own, ...u.system_notify_list.map((x: any) => conv(x, true)).filter((n: Notice) => n.time >= floor)].sort((a, b) => b.time - a.time);
   }
-  return { list, cursor, top: Number(first?.cursor ?? first?.id ?? 0) };
+  return { list, cursor, top: latestSystemCursor([...(d.system_notify_list ?? []),...(u?.system_notify_list ?? [])]) };
 }
 
 /** 系统通知标为已读（v0.46，与 B 站消息中心同一个接口：把已读游标推到最新一条） */
-export async function systemRead(cursor: number, csrf: string): Promise<void> {
-  if (cursor) await get('https://message.bilibili.com/x/sys-msg/update_cursor', { cursor, has_up: 0, csrf });
+export async function systemRead(cursor: string, csrf: string): Promise<void> {
+  if (cursor && cursor !== '0') await get('https://message.bilibili.com/x/sys-msg/update_cursor', { cursor, has_up: 0, csrf });
 }
 
 /** 私信会话标为已读（v0.46）：B 站网页版打开会话时发的 update_ack */
 export async function ackSession(talker: number, seq: number, csrf: string): Promise<void> {
   const body = new URLSearchParams({ talker_id: String(talker), session_type: '1', ack_seqno: String(seq), build: '0', mobi_app: 'web', csrf_token: csrf, csrf });
-  await fetch('https://api.vc.bilibili.com/session_svr/v1/session_svr/update_ack', { method: 'POST', credentials: 'include', body });
+  const response = await fetch('https://api.vc.bilibili.com/session_svr/v1/session_svr/update_ack', { method: 'POST', credentials: 'include', body });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const result = await response.json();
+  if (result.code !== 0) throw new Error(result.message || result.msg || `code ${result.code}`);
 }
 
 // ---- 私信 ----
 export interface Session { talker: number; unread: number; last: string; ts: number; maxSeq?: number; person?: Person }
 export interface MsgCard { title: string; desc: string; cover: string; url: string; rows: [string, string][]; action: string }
-export interface Msg { sender: number; type: number; text: string; image: string; ts: number; key: string; seq: number; card?: MsgCard }
+export interface Msg { sender: number; type: number; text: string; image: string; ts: number; key: string; seq: number; card?: MsgCard; emotes?: MessageEmote[] }
+export interface MessageEmote { text: string; url: string }
+export interface EmotePack { id: number; name: string; emotes: MessageEmote[] }
+export interface MessageImage { url: string; width: number; height: number; imageType: string; original: number; size: number }
 
 /* #2：私信里的卡片 / 通知 / 分享等特殊类型以前只显示标题，现在拆成卡片（标题、正文、封面、明细行、跳转） */
 const VIDEO_URL = (c: any) => (c.bvid ? `https://www.bilibili.com/video/${c.bvid}` : c.id && c.source === 5 ? `https://www.bilibili.com/video/av${c.id}` : '');
@@ -197,55 +206,117 @@ export async function sessions(endTs = 0): Promise<SessionPage> {
     last: s.last_msg ? (() => { const t = msgText(s.last_msg.msg_type, s.last_msg.content); return t.text || (t.card ? `[卡片] ${t.card.title || t.card.desc}` : '[图片]'); })() : '',
     person: s.account_info?.name ? { mid: s.talker_id, name: String(s.account_info.name), face: https(s.account_info.pic_url ?? '') } as Person : s.talker_id === 0 ? { mid: 0, name: '系统提示', face: '' } as Person : undefined,
   }));
-  await fillPeople(list);
   const lastTs = raw.length ? Number(raw[raw.length - 1].session_ts) || 0 : 0;
   return { list, more: !!d.has_more && !!lastTs, endTs: lastTs };
 }
 
-/** 补昵称头像：先批量 user/cards，拿不到的（不在列表里、系统号等）再单个查名片，最多 10 个 */
-export async function fillPeople(list: Session[]): Promise<void> {
+const peopleCache = new Map<number, Person>();
+/** 资料分批补齐，不阻塞会话与聊天；缓存只留在当前页面内存。 */
+export async function fillPeople(list: Session[], onUpdate?: () => void): Promise<void> {
+  const apply = () => {
+    let changed = false;
+    list.forEach(s => { const p = peopleCache.get(s.talker); if (!s.person && p?.name) { s.person = p; changed = true; } });
+    if (changed) onUpdate?.();
+  };
+  apply();
   const need = list.filter((s) => !s.person && s.talker).map((s) => s.talker);
   if (!need.length) return;
   const cards = await get<any[]>('https://api.vc.bilibili.com/account/v1/user/cards', { uids: need.slice(0, 50).join(',') }).catch(() => []);
-  const by = new Map((cards ?? []).map((c: any) => [c.mid, person(c)]));
-  const miss = need.filter((m) => !by.get(m)?.name).slice(0, 10);
+  for (const c of Array.isArray(cards) ? cards : []) { const p = person(c); if (p.name) peopleCache.set(p.mid, p); }
+  apply();
+  const miss = need.filter((m) => !peopleCache.get(m)?.name).slice(0, 10);
   await Promise.all(miss.map(async (mid) => {
     const c = await get<any>('https://api.bilibili.com/x/web-interface/card', { mid }).catch(() => null);
-    if (c?.card?.name) by.set(mid, { mid, name: String(c.card.name), face: https(c.card.face ?? '') } as Person);
+    if (c?.card?.name) { peopleCache.set(mid, { mid, name: String(c.card.name), face: https(c.card.face ?? '') }); apply(); }
   }));
-  list.forEach((s) => { const p = by.get(s.talker); if (!s.person && p?.name) s.person = p; });
 }
 
-/** 全部私信标为已读：翻完所有会话页，对有未读的逐个 update_ack 到最新一条（最多 25 页 = 500 个会话） */
+/** 翻完会话分页，只在 update_ack 成功后累计；游标停滞时报告未完成。 */
 export async function readAllSessions(csrf: string, onProgress?: (n: number) => void): Promise<number> {
   let endTs = 0, done = 0;
-  for (let page = 0; page < 25; page++) {
+  for (;;) {
     const d = await get<any>('https://api.vc.bilibili.com/session_svr/v1/session_svr/get_sessions', { session_type: 1, group_fold: 1, unfollow_fold: 0, sort_rule: 2, ...(endTs ? { end_ts: endTs } : {}) });
     const raw: any[] = d.session_list ?? [];
     for (const s of raw) {
       if (s.session_type !== 1 || !s.unread_count || !s.max_seqno) continue;
-      await ackSession(s.talker_id, Number(s.max_seqno), csrf).catch(() => {});
-      onProgress?.(++done);
+      await ackSession(s.talker_id, Number(s.max_seqno), csrf);
+      done++;
+      onProgress?.(done);
     }
-    endTs = raw.length ? Number(raw[raw.length - 1].session_ts) || 0 : 0;
-    if (!d.has_more || !endTs) break;
+    if (!d.has_more) break;
+    const next = raw.length ? Number(raw[raw.length - 1].session_ts) || 0 : 0;
+    if (!next || next === endTs) throw new Error('会话列表未完成，请稍后重试');
+    endTs = next;
   }
   return done;
 }
 
-export async function messages(talker: number): Promise<Msg[]> {
-  const d = await get<any>('https://api.vc.bilibili.com/svr_sync/v1/svr_sync/fetch_session_msgs', { talker_id: talker, session_type: 1, size: 30 });
-  return (d.messages ?? []).map((m: any): Msg => ({ sender: m.sender_uid, type: m.msg_type, ...msgText(m.msg_type, m.content), ts: m.timestamp, key: String(m.msg_key), seq: Number(m.msg_seqno) || 0 })).reverse();
+/** 按原生消息中心的读取协议处理五类未读；失败类别由界面保留并提示。 */
+export async function readAllMessages(csrf: string): Promise<(keyof Unread)[]> {
+  const tasks: [keyof Unread, Promise<unknown>][] = [
+    ['reply',replies(null)], ['at',ats(null)], ['like',likes(null)], ['chat',readAllSessions(csrf)],
+    ['system',Promise.all([
+      get<any>('https://message.bilibili.com/x/sys-msg/query_user_notify', { csrf,page_size:20 }),
+      get<any>('https://message.bilibili.com/x/sys-msg/query_unified_notify', { csrf,page_size:10 }),
+    ]).then(([own,unified]) => systemRead(latestSystemCursor([...(own.system_notify_list ?? []),...(unified.system_notify_list ?? [])]),csrf))],
+  ];
+  const results = await Promise.allSettled(tasks.map(([,task]) => task));
+  return tasks.filter((_,i) => results[i].status === 'rejected').map(([key]) => key);
 }
 
-export async function sendText(me: number, to: number, text: string, csrf: string): Promise<boolean> {
+export async function messages(talker: number): Promise<Msg[]> {
+  const d = await get<any>('https://api.vc.bilibili.com/svr_sync/v1/svr_sync/fetch_session_msgs', { talker_id: talker, session_type: 1, size: 30 });
+  const emotes = (d.e_infos ?? []).map((e: any): MessageEmote => ({ text: String(e.text ?? ''), url: https(e.gif_url || e.uri || '') })).filter((e: MessageEmote) => e.text && /^https:\/\//.test(e.url));
+  return (d.messages ?? []).map((m: any): Msg => ({ sender: m.sender_uid, type: m.msg_type, ...msgText(m.msg_type, m.content), ts: m.timestamp, key: String(m.msg_key), seq: Number(m.msg_seqno) || 0, emotes })).reverse();
+}
+
+/** 原版私信的表情面板也使用 reply 场景，按当前登录账号返回可用表情包。 */
+export async function messageEmotes(): Promise<EmotePack[]> {
+  const d = await get<any>('https://api.bilibili.com/x/emote/user/panel/web', { business: 'reply' });
+  return (d.packages ?? []).map((p: any): EmotePack => ({ id: p.id, name: String(p.text || '表情'),
+    emotes: (p.emote ?? []).filter((e: any) => e.flags?.unlocked !== false && e.flags?.unlocked !== 0).map((e: any): MessageEmote => ({ text: String(e.text ?? ''), url: https(e.url) })).filter((e: MessageEmote) => e.text && /^https:\/\//.test(e.url))
+  })).filter((p: EmotePack) => p.emotes.length);
+}
+
+export function validateMessageImage(file: Pick<File, 'type' | 'size'>): void {
+  if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) throw new Error('请选择 JPG、PNG、GIF 或 WebP 图片');
+  if (!file.size || file.size > 20 * 1024 * 1024) throw new Error('图片大小不能超过 20 MB');
+  if (file.type === 'image/gif' && file.size > 1024 * 1024) throw new Error('GIF 图片不能超过 1 MB');
+}
+
+/** 与原版消息页相同的上传通道；仅在用户点击发送后调用。 */
+export async function uploadMessageImage(file: File, csrf: string, signal?: AbortSignal): Promise<MessageImage> {
+  validateMessageImage(file);
+  const body = new FormData(); body.append('file_up', file); body.append('biz', 'im'); body.append('csrf', csrf); body.append('csrf_token', csrf);
+  const response = await fetch('https://api.bilibili.com/x/dynamic/feed/draw/upload_bfs', { method: 'POST', credentials: 'include', body, signal });
+  if (!response.ok) throw new Error(`图片上传失败（HTTP ${response.status}）`);
+  const j = await response.json();
+  if (j.code !== 0) throw new Error(j.message || '图片上传失败');
+  const d = j.data, url = https(d?.image_url);
+  if (!isMessageImageUrl(url) || !(d?.image_width > 0 && d?.image_height > 0)) throw new Error('图片上传结果不完整，请重试');
+  return { url, width: d.image_width, height: d.image_height, imageType: file.type.split('/')[1], original: 1, size: Number.isFinite(d.img_size) ? d.img_size : file.size / 1024 };
+}
+
+function isMessageImageUrl(raw: string): boolean {
+  try { const u = new URL(raw); return u.protocol === 'https:' && /(^|\.)(biliimg\.com|hdslb\.com)$/.test(u.hostname); } catch { return false; }
+}
+
+export function sendText(me: number, to: number, text: string, csrf: string, newFace = false): Promise<boolean> {
+  return sendMessage(me, to, 1, { content: text }, csrf, newFace);
+}
+export function sendImage(me: number, to: number, image: MessageImage, csrf: string): Promise<boolean> {
+  if (!isMessageImageUrl(image.url) || !(image.width > 0 && image.height > 0)) throw new Error('图片信息无效，请重新选择');
+  return sendMessage(me, to, 2, image, csrf);
+}
+async function sendMessage(me: number, to: number, type: 1 | 2, content: object, csrf: string, newFace = false): Promise<boolean> {
   const dev = crypto.randomUUID().toUpperCase();
   const body = new URLSearchParams({
-    'msg[sender_uid]': String(me), 'msg[receiver_type]': '1', 'msg[receiver_id]': String(to), 'msg[msg_type]': '1', 'msg[msg_status]': '0',
-    'msg[content]': JSON.stringify({ content: text }), 'msg[new_face_version]': '0', 'msg[dev_id]': dev, 'msg[timestamp]': String(Math.floor(Date.now() / 1000)),
+    'msg[sender_uid]': String(me), 'msg[receiver_type]': '1', 'msg[receiver_id]': String(to), 'msg[msg_type]': String(type), 'msg[msg_status]': '0',
+    'msg[content]': JSON.stringify(content), 'msg[new_face_version]': newFace ? '1' : '0', 'msg[dev_id]': dev, 'msg[timestamp]': String(Math.floor(Date.now() / 1000)),
     from_firework: '0', build: '0', mobi_app: 'web', csrf_token: csrf, csrf,
   });
   const r = await fetch('https://api.vc.bilibili.com/web_im/v1/web_im/send_msg', { method: 'POST', credentials: 'include', body });
+  if (!r.ok) return false;
   const j = await r.json().catch(() => ({}));
   return j.code === 0;
 }

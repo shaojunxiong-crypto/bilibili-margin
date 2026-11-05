@@ -9,7 +9,7 @@
  *  2) 在右边挂一个 Shadow DOM 侧栏：作者卡（关注）、目录 + 阅读进度、UP 主最近投稿、点赞 / 投币 / 收藏 / 转发 / 评论。
  *     操作按钮转发点击给被藏起来的原生侧边工具条，计数和点亮状态从它那儿同步，行为和原版完全一致。
  */
-import { h, icon, fmtCount, guardTyping } from './dom';
+import { h, icon, ICONS, fmtCount, guardTyping } from './dom';
 import { getJSON } from '../api/http';
 import { spaceVideos, follow } from '../api/space';
 import { csrf, https } from './shell';
@@ -35,11 +35,11 @@ export function detailKind(loc: Location = location): DetailKind | null {
 interface Author { mid: number; name: string; face: string; sign: string; fans: number; following: boolean; official: string }
 
 const ACTIONS = [
-  { key: 'like', label: '点赞', path: '<path d="M7 10v10H4V10zM7 10l4-7c1.7 0 2.8 1.3 2.5 3L13 9h5.6a2 2 0 0 1 2 2.4l-1.4 7A2 2 0 0 1 17.2 20H7"/>' },
-  { key: 'coin', label: '投币', path: '<circle cx="12" cy="12" r="8.5"/><path d="M9 9.5h6M12 9.5V16"/>' },
-  { key: 'favorite', label: '收藏', path: '<path d="m12 3.8 2.5 5.1 5.6.8-4 4 .9 5.6-5-2.7-5 2.7.9-5.6-4-4 5.6-.8z"/>' },
-  { key: 'forward', label: '转发', path: '<path d="M14 5l6 6-6 6M20 11H10a6 6 0 0 0-6 6v1"/>' },
-  { key: 'comment', label: '评论', path: '<path d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8l-4 3v-3H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/>' },
+  { key: 'like', label: '点赞', path: ICONS.like },
+  { key: 'coin', label: '投币', path: ICONS.coin },
+  { key: 'favorite', label: '收藏', path: ICONS.star },
+  { key: 'forward', label: '转发', path: ICONS.forward },
+  { key: 'comment', label: '评论', path: ICONS.comment },
 ] as const;
 
 const CSS = `

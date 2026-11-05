@@ -1,13 +1,25 @@
 import type { Settings } from '../../shared/settings';
 import { nav } from '../api/http';
-import { ackSession, ats, fillPeople, likes, markMsgRead, messages, readAllSessions, replies, sendText, sessions, system, systemRead, unread, type MsgCard, type Notice, type Page, type Session } from '../api/msg';
-import { dayBucket, fmtAgo, h, icon, ICONS, svg } from './dom';
+import { ackSession, ats, fillPeople, likes, markMsgRead, messages, readAllMessages, readAllSessions, replies, sessions, system, systemRead, unread, type MessageEmote, type Msg, type MsgCard, type Notice, type Page, type Session, type Unread } from '../api/msg';
+import { dayBucket, fmtAgo, h, icon, ICONS } from './dom';
 import { openLightbox } from './lightbox';
 import { toast } from './controls';
 import { csrf, PageShell } from './shell';
 import { targetOfMsgCard } from '../filter-targets';
+import { createMessageComposer } from './message-composer';
 
 const msgCardData = new WeakMap<Element, MsgCard>();
+
+function messageText(text: string, emotes: MessageEmote[] = []): (Node | string)[] {
+  const byText = new Map(emotes.map(e => [e.text, e.url]));
+  return text.split(/(\[[^\]\n]{1,100}\])/g).map(part => {
+    const url = byText.get(part);
+    if (!url) return part;
+    const image = h('img', { class: 'wh-inline-emote', src: url, alt: part, title: part, loading: 'lazy', referrerpolicy: 'no-referrer' });
+    image.addEventListener('error', () => image.replaceWith(document.createTextNode(part)), { once: true });
+    return image;
+  });
+}
 
 /**
  * 系统通知正文 → 节点：B 站用 #{文字}{"链接"} 嵌链接，正文里也会直接放 https 链接；以前全被剥成纯文字点不了（B 站评论反馈）。
@@ -43,6 +55,8 @@ export class MessageApp {
   private nav!: HTMLElement;
   private pane!: HTMLElement;
   private me = 0;
+  private chatDispose?: () => void;
+  private chatCache = new Map<number, Msg[]>();
   private gen = 0;
   /** 上次刷新当前视图的时间：标签页切回来太久没刷就自动重拉（点赞/回复不刷新的反馈） */
   private shownAt = 0;
@@ -125,6 +139,20 @@ export class MessageApp {
         b.dataset.view = id;
         return b;
       }));
+    const markAll = h('button', { class:'ghost small ms-readall',type:'button',disabled:'','aria-label':'将所有消息标为已读' }, '全部已读');
+    markAll.addEventListener('click', async () => {
+      markAll.disabled = true;
+      markAll.textContent = '处理中…';
+      try {
+        const failed = await readAllMessages(csrf());
+        const u = await this.refreshUnread();
+        if (u?.chat === 0) this.pane.querySelectorAll('.wh-dot').forEach((dot) => dot.remove());
+        const names = { reply:'回复',at:'@ 我的',like:'赞',system:'系统通知',chat:'私信' };
+        toast(this.shell.app, failed.length ? `未能全部完成：${failed.map((key) => names[key]).join('、')}` : !u ? '已处理，暂未刷新未读数' : Object.values(u).some((n) => n > 0) ? '已处理，仍有未读消息' : '消息已全部标为已读');
+      } catch { toast(this.shell.app, '操作失败，稍后再试'); }
+      finally { markAll.disabled = false;markAll.textContent = '全部已读'; }
+    });
+    this.nav.append(markAll);
     this.pane = h('section', { class: 'ms-pane' });
     this.shell.main.append(h('div', { class: 'ms' }, this.nav, this.pane));
     // hash 变化：切到已知视图就重渲染；hash 被清空 = 从顶栏「消息」重新进入本页
@@ -138,6 +166,7 @@ export class MessageApp {
     nav().then((n) => {
       if (!n?.isLogin) { this.pane.replaceChildren(this.empty('登录后查看消息', h('a', { class: 'sp-follow', href: 'https://passport.bilibili.com/login', target: '_blank', rel: 'noopener' }, '去登录'))); return; }
       this.me = n.mid ?? 0;
+      markAll.disabled = false;
       this.refreshUnread();
       this.show();
     }).catch(() => this.show());
@@ -159,13 +188,14 @@ export class MessageApp {
     addEventListener('resize', onResize, { passive: true });
   }
 
-  private async refreshUnread(): Promise<void> {
+  private async refreshUnread(): Promise<Unread | null> {
     const u = await unread().catch(() => null);
-    if (!u) return;
+    if (!u) return null;
     const n: Record<View, number> = { whisper: u.chat, reply: u.reply, at: u.at, like: u.like, system: u.system };
-    this.nav.querySelectorAll<HTMLElement>('.ms-item').forEach((b) => { const v = b.dataset.view as View; const c = v === this.view && v !== 'whisper' ? 0 : n[v]; b.querySelector('.ms-n')!.textContent = c ? (c > 99 ? '99+' : String(c)) : ''; });
+    this.nav.querySelectorAll<HTMLElement>('.ms-item').forEach((b) => { const c = n[b.dataset.view as View]; b.querySelector('.ms-n')!.textContent = c ? (c > 99 ? '99+' : String(c)) : ''; });
     // 顶栏角标同步：直接带上本次取到的未读总数，避免顶栏另发一次请求拿到不同口径的数字
     dispatchEvent(new CustomEvent('margin:unread', { detail: { total: u.reply + u.at + u.like + u.system + u.chat } }));
+    return u;
   }
 
   /** 左侧分类的未读数（v0.46：点开后立刻清掉 / 减掉，顶栏消息角标跟着刷新，不用等刷新页面） */
@@ -193,6 +223,7 @@ export class MessageApp {
   }
 
   private show(): void {
+    this.chatDispose?.(); this.chatDispose = undefined;
     this.gen++;
     this.shownAt = Date.now();
     this.nav.querySelectorAll<HTMLElement>('.ms-item').forEach((b) => b.toggleAttribute('data-selected', b.dataset.view === this.view));
@@ -235,9 +266,8 @@ export class MessageApp {
           // 第一页拉到就算看过了：B 站在拉列表时已经记了已读，系统通知还要把游标推到最新
           const v = this.view;
           // 15 秒轮询会反复走 feed()，system 的已读游标只推一次（切分类回来会重新计）
-          if (v === 'system' && p.top && !this.marked.has(v)) {
-            this.marked.add(v);
-            systemRead(p.top, csrf()).catch(() => {}).finally(() => this.setCount(v, () => 0));
+          if (v === 'system') {
+            if (p.top && p.top !== '0' && !this.marked.has(v)) systemRead(p.top, csrf()).then(() => { this.marked.add(v);this.setCount(v, () => 0); }).catch(() => {});
           } else this.setCount(v, () => 0);
           // 页面加载完成后，触发一次「刷新」按钮的点击操作（用户要求；每次页面加载只点一次，防循环）
           if (!this.bootClick) {
@@ -273,7 +303,7 @@ export class MessageApp {
     const who: Node[] = [];
     names.forEach((a, i) => { if (i) who.push(document.createTextNode('、')); who.push(a); });
     if (n.more > 0) who.push(h('span', { class: 'ms-more-n' }, ` 等 ${n.more + names.length} 人`));
-    const badge = n.kind === 'like' ? svg('<svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" aria-hidden="true"><path d="M12 20.5s-7.5-4.6-7.5-10.1A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.8c0 5.5-7.5 10.1-7.5 10.1Z"/></svg>')
+    const badge = n.kind === 'like' ? icon(ICONS.heart)
       : n.kind === 'at' ? document.createTextNode('@') : icon(ICONS.message);
     const showQuote = n.quote && n.quote !== n.title;
     return h('article', { class: `ms-row ${n.kind}` },
@@ -305,17 +335,17 @@ export class MessageApp {
     let endTs = 0, more = true, busy = false, bucket = '', first = true;
     const sentinel = h('button', { class: 'wh-more', type: 'button' }, '加载更多会话');
     sentinel.addEventListener('click', () => page());
-    const readAll = h('button', { class: 'ghost small wh-readall', type: 'button', title: '把所有私信会话标为已读' }, '全部已读');
+    const readAll = h('button', { class: 'ghost small wh-readall', type: 'button', title: '把所有私信会话标为已读' }, '私信已读');
     readAll.addEventListener('click', async () => {
       readAll.setAttribute('disabled', '');
       readAll.textContent = '处理中…';
       try {
         const n = await readAllSessions(csrf(), (k) => { readAll.textContent = `已读 ${k}…`; });
         list.querySelectorAll('.wh-dot').forEach((d) => d.remove());
-        this.setCount('whisper', () => 0);
+        await this.refreshUnread();
         toast(this.shell.app, n ? `已把 ${n} 个会话标为已读` : '没有未读的私信');
       } catch { toast(this.shell.app, '操作失败，稍后再试'); }
-      readAll.textContent = '全部已读';
+      readAll.textContent = '私信已读';
       readAll.removeAttribute('disabled');
     });
     list.append(h('div', { class: 'wh-bar' }, h('span', {}, '会话'), readAll));
@@ -336,7 +366,6 @@ export class MessageApp {
           if (want && !target) {
             // 要打开的会话不在第一页：单独补昵称，不再显示成 UID（B 站评论反馈）
             target = { talker: want, unread: 0, last: '', ts: 0 };
-            await fillPeople([target]);
             ss.unshift(target);
           }
         }
@@ -347,6 +376,7 @@ export class MessageApp {
           sentinel.before(this.sessionRow(s, chat, list));
         });
         if (target) (list.querySelector(`[data-talker="${target.talker}"]`) as HTMLElement)?.click();
+        this.hydrateSessions(ss, list, chat, gen);
         if (!more) sentinel.remove();
       } catch (e) {
         if (gen === this.gen) { more = false; sentinel.replaceWith(this.empty(`加载失败：${(e as Error).message}`)); }
@@ -371,19 +401,48 @@ export class MessageApp {
       list.querySelectorAll('.wh-s').forEach((x) => x.toggleAttribute('data-selected', x === b));
       b.querySelector('.wh-dot')?.remove();
       history.replaceState(null, '', `#/whisper/mid${s.talker}`);
-      this.openChat(s, name, chat);
+      this.openChat(s, s.person?.name || `UID ${s.talker}`, chat);
     });
     return b;
   }
 
+  private hydrateSessions(ss: Session[], list: HTMLElement, chat: HTMLElement, gen: number): void {
+    void fillPeople(ss, () => {
+      if (gen !== this.gen || !list.isConnected) return;
+      for (const s of ss) {
+        const p = s.person, row = list.querySelector<HTMLElement>(`[data-talker="${s.talker}"]`);
+        if (!p?.name || !row) continue;
+        const label = row.querySelector('b'); if (label && label.textContent !== p.name) label.textContent = p.name;
+        if (p.face) {
+          const face = row.querySelector('.ms-face'), src = `${p.face}@80w_80h_1c.webp`;
+          if (face instanceof HTMLImageElement) { if (face.getAttribute('src') !== src) face.src = src; }
+          else face?.replaceWith(h('img', { class: 'ms-face', src, alt: '', referrerpolicy: 'no-referrer' }));
+        }
+        if (!row.hasAttribute('data-selected')) continue;
+        const title = chat.querySelector('.wh-head a'); if (title) title.textContent = p.name;
+        const input = chat.querySelector<HTMLTextAreaElement>('.wh-input');
+        if (input) { input.placeholder = `发消息给 ${p.name}`; input.setAttribute('aria-label', input.placeholder); }
+        chat.querySelectorAll<HTMLAnchorElement>('.wh-mface').forEach(face => {
+          face.setAttribute('aria-label', `${p.name} 的个人空间`);
+          if (p.face && !face.classList.contains('ghost') && !face.querySelector('img')) face.append(h('img', { src: `${p.face}@80w_80h_1c.webp`, alt: '', referrerpolicy: 'no-referrer' }));
+        });
+      }
+    });
+  }
+
   private async openChat(s: Session, name: string, chat: HTMLElement): Promise<void> {
+    this.chatDispose?.();
     const log = h('div', { class: 'wh-log' });
-    const input = h('textarea', { class: 'wh-input', rows: 1, placeholder: `发消息给 ${name}`, maxlength: 500 }) as HTMLTextAreaElement;
-    const send = h('button', { class: 'wh-send', type: 'button' }, '发送');
+    let revision = 0;
+    const composer = createMessageComposer({ me: this.me, to: s.talker, name, csrf,
+      say: text => toast(this.shell.app, text), onSent: async () => { const request = ++revision; const list = await messages(s.talker); if (request === revision && composer.el.isConnected) paint(list); } });
+    this.chatDispose = composer.dispose;
     chat.replaceChildren(
       h('header', { class: 'wh-head' }, h('a', { href: `https://space.bilibili.com/${s.talker}`, target: '_blank', rel: 'noopener' }, name), h('span', { class: 'eyebrow' }, `UID ${s.talker}`)),
-      log, h('div', { class: 'wh-compose' }, input, send));
+      log, composer.el);
     const paint = (list: Awaited<ReturnType<typeof messages>>) => {
+      this.chatCache.delete(s.talker); this.chatCache.set(s.talker, list);
+      if (this.chatCache.size > 20) this.chatCache.delete(this.chatCache.keys().next().value!);
       const face = s.person?.face ? `${s.person.face}@80w_80h_1c.webp` : '';
       log.replaceChildren(...list.map((m, i) => {
         if (m.type === 18) return h('div', { class: 'wh-tip' }, m.text);
@@ -411,33 +470,31 @@ export class MessageApp {
               e.preventDefault();
               const pics = list.filter((x) => x.image).map((x) => x.image as string);
               openLightbox(pics, pics.indexOf(m.image as string), log.getRootNode());
-            } }, h('img', { src: /\.gif(\?|$)/i.test(m.image) ? m.image : `${m.image}@360w.webp`, alt: '', referrerpolicy: 'no-referrer', loading: 'lazy' })) : null,
-            m.text ? h('p', {}, m.text) : null,
+            } }, h('img', { src: /\.gif([?#]|$)/i.test(m.image) || !/^https:\/\/[^/]+\.(?:hdslb|biliimg)\.com\/[^?]+$/.test(m.image) ? m.image : `${m.image}@360w.webp`, alt: '', referrerpolicy: 'no-referrer', loading: 'lazy' })) : null,
+            m.text ? h('p', {}, ...messageText(m.text, m.emotes)) : null,
             card,
             h('time', {}, fmtAgo(m.ts))));
       }));
       log.scrollTop = log.scrollHeight;
     };
+    const cached = this.chatCache.get(s.talker);
+    if (cached) paint(cached); else log.append(this.empty('正在加载聊天记录…'));
+    composer.focus();
     try {
       const list = await messages(s.talker);
-      paint(list);
+      if (!revision && composer.el.isConnected) {
+        const top = log.scrollTop, atBottom = log.scrollHeight - top - log.clientHeight < 40;
+        paint(list); if (cached && !atBottom) log.scrollTop = top;
+      }
       const seq = list.reduce((m, x) => Math.max(m, x.seq), 0);
       if (seq) ackSession(s.talker, seq, csrf()).catch(() => {});
       if (s.unread) { const n = s.unread; s.unread = 0; this.setCount('whisper', (c) => c - n); }
-    } catch (e) { log.replaceChildren(this.empty(`加载失败：${(e as Error).message}`)); }
-    const go = async () => {
-      const text = input.value.trim();
-      if (!text) return;
-      send.disabled = true;
-      const ok = await sendText(this.me, s.talker, text, csrf()).catch(() => false);
-      send.disabled = false;
-      if (!ok) { toast(this.shell.app, '发送失败'); return; }
-      input.value = '';
-      paint(await messages(s.talker).catch(() => []));
-    };
-    send.addEventListener('click', go);
-    input.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); go(); } });
-    input.focus();
+    } catch (e) {
+      if (!revision && composer.el.isConnected) {
+        if (cached) toast(this.shell.app, '聊天记录刷新失败，暂时显示上次内容');
+        else log.replaceChildren(this.empty(`加载失败：${(e as Error).message}`));
+      }
+    }
   }
 }
 

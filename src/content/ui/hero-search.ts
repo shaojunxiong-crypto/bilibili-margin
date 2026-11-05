@@ -1,4 +1,5 @@
 import { every } from '../sched';
+import { openBili } from '../navigation';
 import { forgetSearch, hotSearch, rememberSearch, searchHistory, searchUrl, suggest, type Hot } from '../api/search';
 import { h, highlight, icon, ICONS } from './dom';
 import { onMotionChange, reducedMotion } from '../motion';
@@ -85,7 +86,7 @@ export function createHeroSearch(app: () => HTMLElement, _onPalette?: () => void
     q = q.trim();
     if (!q) { input.focus(); return; }
     rememberSearch(q);
-    window.open(searchUrl(q), '_blank', 'noopener');
+    openBili(searchUrl(q));
   };
   const opt = (cls: string, run: () => void, ...kids: (Node | string)[]) => {
     const o = h('div', { class: `hs-opt ${cls}`, role: 'option', 'aria-selected': 'false' }, ...kids);

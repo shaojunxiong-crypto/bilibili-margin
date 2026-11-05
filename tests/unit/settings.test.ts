@@ -26,6 +26,28 @@ describe('settings 迁移（merge / loadSettings）', () => {
     expect(s).toEqual(DEFAULTS);
   });
 
+  it('撤回的播放页评论布局选项不再导入或作为默认设置', () => {
+    expect(DEFAULTS).not.toHaveProperty('watchComments');
+    expect(DEFAULTS).not.toHaveProperty('commentInput');
+    const s = sanitizeSettings({watchComments:'side',commentInput:'comfortable'});
+    expect(s).not.toHaveProperty('watchComments');
+    expect(s).not.toHaveProperty('commentInput');
+  });
+
+  it('新安装默认直接打开收藏夹，已有选择保留；列数枚举安全回落', async () => {
+    expect(DEFAULTS.favDirect).toBe(true);
+    store.set('margin:settings',{favDirect:false,favColumns:9});
+    expect(await loadSettings()).toMatchObject({favDirect:false,favColumns:3});
+    expect(sanitizeSettings({favColumns:4})).toMatchObject({favColumns:4});
+  });
+
+  it('强调色与玻璃设置默认沿用经典色并使用柔和效果，非法枚举回落',async () => {
+    expect(DEFAULTS.accent).toBe('classic');expect(DEFAULTS.glass).toBe('soft');
+    expect(sanitizeSettings({accent:'pink',glass:'liquid'})).toMatchObject({accent:'pink',glass:'liquid'});
+    store.set('margin:settings',{accent:'bad',glass:'bad'});
+    expect(await loadSettings()).toMatchObject({accent:'classic',glass:'soft'});
+  });
+
   it('部分存储：给什么用什么，缺的补默认', async () => {
     store.set('margin:settings', { theme: 'dark', zoom: 110 });
     const s = await loadSettings();
@@ -87,6 +109,16 @@ describe('settings 迁移（merge / loadSettings）', () => {
     expect(s.theme).toBe('light');
     expect(s.monoNum).toBe(false);
     expect(store.get('margin:settings')).toBeTruthy();
+  });
+
+  it('广告片段跳过默认关闭，仅显式布尔值开启，支持备份导入', async () => {
+    expect((await loadSettings()).sponsorSkip).toBe(false);
+    store.set('margin:settings', { sponsorSkip: 'true' });
+    expect((await loadSettings()).sponsorSkip).toBe(false);
+    await saveSettings({ sponsorSkip: true });
+    expect((await loadSettings()).sponsorSkip).toBe(true);
+    expect(sanitizeSettings({ sponsorSkip: true })?.sponsorSkip).toBe(true);
+    expect(sanitizeSettings({ sponsorSkip: 'true' })?.sponsorSkip).toBe(false);
   });
 });
 

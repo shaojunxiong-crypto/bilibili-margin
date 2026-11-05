@@ -20,22 +20,23 @@ html.margin-skin[data-margin-theme="dark"] {
 
 html.margin-skin {
   --m-canvas: #f5f4f1; --m-surface: #ffffff; --m-ink: #17181a; --m-muted: #5f6167; --m-faint: #66686d;
-  --m-line: rgb(23 24 26 / .09); --m-chip: rgb(23 24 26 / .05); --m-accent: #00aeec;
+  --m-line: rgb(23 24 26 / .09); --m-chip: rgb(23 24 26 / .05); --m-accent: var(--margin-primary,#00aeec);
   --m-serif: var(--margin-title, "Instrument Serif", "Margin Serif SC", "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif);
   --m-mono: var(--margin-mono, "Geist Mono", "Margin Sans SC", ui-monospace, SFMono-Regular, Menlo, monospace);
   --m-sans: var(--margin-sans, "Geist", "Margin Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif);
   --m-radius: calc(16px * var(--margin-rk, 1));
 
   --bg1: #ffffff; --bg2: #f5f4f1; --bg3: #efeeea; --bg1_float: #ffffff; --bg2_float: #f1f0ec;
+  --bg1_rgb: 255, 255, 255;
   /* 评论「UP主觉得很赞」标签实际读取这两个变量；显式定义后可穿透 Shadow DOM，避免 B 站无效 fallback 退回黑色。 */
   --bili-comment-tag-color: #757575; --bili-comment-tag-bg: #f4f4f4;
   /* v0.31.2：--text3 从 #7a7c81（3.8:1）加深到 #66686d，和映间 --faint 一致，≥4.5:1 */
   --text1: #17181a; --text2: #55575c; --text3: #66686d; --text4: #c4c5c8;
-  --text_link: #0089c0; --text_hover: #6f7177; --text_active: #55575c;
+  --text_link: var(--margin-accent-light,#0089c0); --text_hover: #6f7177; --text_active: #55575c;
   --line_light: #ecebe7; --line_regular: #e3e2dd; --line_bold: #cfcdc8; --line_border: #cfcdc8;
   --graph_white: #ffffff; --graph_bg_thin: #f5f4f1; --graph_bg_regular: #efeeea; --graph_bg_thick: #e3e2dd;
   --graph_weak: #cfcdc8; --graph_medium: #8d8f94; --graph_icon: #55575c;
-  --brand_blue: #00aeec; --brand_blue_thin: #e3f5fc;
+  --brand_blue: var(--margin-primary,#00aeec); --brand_blue_thin: color-mix(in srgb,var(--brand_blue) 12%,var(--m-surface));
   background: var(--m-canvas) !important;
 }
 html.margin-skin[data-margin-theme="dark"] {
@@ -43,13 +44,14 @@ html.margin-skin[data-margin-theme="dark"] {
   --m-line: rgb(255 255 255 / .08); --m-chip: rgb(255 255 255 / .06);
 
   --bg1: #1a1a1c; --bg2: #111112; --bg3: #232326; --bg1_float: #1f1f22; --bg2_float: #2a2a2d;
+  --bg1_rgb: 26, 26, 28;
   --bili-comment-tag-color: #939393; --bili-comment-tag-bg: #1e1e1e;
   --text1: #ededee; --text2: #b4b5b9; --text3: #9a9ba0; --text4: #55565a;
-  --text_link: #4cc3f0; --text_hover: #c9cacd; --text_active: #b4b5b9;
+  --text_link: var(--margin-accent-dark,#4cc3f0); --text_hover: #c9cacd; --text_active: #b4b5b9;
   --line_light: #222225; --line_regular: #2c2c30; --line_bold: #3a3a3f; --line_border: #3a3a3f;
   --graph_white: #1a1a1c; --graph_bg_thin: #18181a; --graph_bg_regular: #232326; --graph_bg_thick: #2c2c30;
   --graph_weak: #3a3a3f; --graph_medium: #85868b; --graph_icon: #a0a1a6;
-  --brand_blue_thin: #0c2c38;
+  --brand_blue_thin: color-mix(in srgb,var(--brand_blue) 20%,var(--m-surface));
   color-scheme: dark;
 }
 html.margin-skin body { background: var(--m-canvas) !important; color: var(--m-ink); }
@@ -60,14 +62,16 @@ html.margin-skin .bili-header.fixed-header { display: none !important; }
 #margin-watch-top { position: fixed; top: 0; left: 0; right: 0; z-index: 10000; height: 72px; }
 #margin-watch-top[hidden] { display: none !important; }
 html.margin-watch .video-container-v1, html.margin-watch .playlist-container { padding-top: 96px !important; }
+html.margin-watch .follow-btn-inner { background:var(--margin-primary,var(--m-ink))!important;color:var(--margin-primary-fg,var(--m-canvas))!important; }
 
 /* 广告与推广：统一由 global.css 的 html.margin-ads-hide 控制（v0.47） */
 
 /* 标题与信息 */
 html.margin-watch .video-info-container { height: auto !important; padding-top: 0 !important; margin-bottom: 20px; }
+html.margin-watch.margin-wide .video-info-container { width: var(--m-wide-width, 100%) !important; max-width: none !important; box-sizing: border-box; }
 html.margin-watch .video-info-title { height: auto !important; margin-bottom: 10px; }
 html.margin-watch h1.video-title, html.margin-watch .video-info-title .video-title {
-  font: 600 24px/1.38 var(--m-serif) !important; letter-spacing: .01em; color: var(--m-ink) !important;
+  font: 600 24px/1.38 var(--m-sans) !important; letter-spacing: .01em; color: var(--m-ink) !important;
   white-space: normal !important; overflow: visible !important; height: auto !important; max-height: none !important; -webkit-line-clamp: unset !important;
 }
 html.margin-watch .video-info-detail, html.margin-watch .video-info-detail-list,
@@ -82,6 +86,8 @@ html.margin-watch #playerWrap { border-radius: var(--m-radius); background: tran
 html.margin-watch #bilibili-player-placeholder, html.margin-watch #bilibili-player-placeholder-top,
 html.margin-watch #bilibili-player-placeholder-bottom { background: transparent !important; border-radius: var(--m-radius); }
 html.margin-watch #app.app-v1, html.margin-watch #app { background: transparent !important; }
+/* 原生加载阶段尚未写入 data-screen，先沿用普通模式的圆角。 */
+html.margin-watch .bpx-player-container:not([data-screen]),
 html.margin-watch .bpx-player-container[data-screen="normal"],
 html.margin-watch .bpx-player-container[data-screen="wide"] {
   border-radius: var(--m-radius) !important; background: transparent !important;
@@ -89,11 +95,13 @@ html.margin-watch .bpx-player-container[data-screen="wide"] {
 }
 /* 视频层是合成层，单靠父级 overflow:hidden + 圆角在 Chromium 里裁不干净，四角会漏出黑底；
    直接在视频区域上用 mask 裁圆角 */
+html.margin-watch .bpx-player-container:not([data-screen]) .bpx-player-video-area,
 html.margin-watch .bpx-player-container[data-screen="normal"] .bpx-player-video-area,
 html.margin-watch .bpx-player-container[data-screen="wide"] .bpx-player-video-area {
   border-radius: var(--m-radius) var(--m-radius) 0 0; overflow: hidden; isolation: isolate;
   -webkit-mask-image: linear-gradient(#000, #000); mask-image: linear-gradient(#000, #000);
 }
+html.margin-watch .bpx-player-container:not([data-screen]) .bpx-player-primary-area,
 html.margin-watch .bpx-player-container[data-screen="normal"] .bpx-player-primary-area,
 html.margin-watch .bpx-player-container[data-screen="wide"] .bpx-player-primary-area { border-radius: var(--m-radius); background: transparent !important; }
 html.margin-watch .bpx-player-sending-area { background: var(--m-surface) !important; border-radius: 0 0 var(--m-radius) var(--m-radius); }
@@ -112,6 +120,8 @@ html.margin-watch .video-toolbar-left-item {
 html.margin-watch .video-toolbar-left-item:hover { color: var(--m-ink) !important; box-shadow: var(--ring), var(--sh-sm); transform: translateY(-1px); }
 html.margin-watch .video-toolbar-left-item.on { color: var(--m-accent) !important; box-shadow: 0 0 0 var(--hair) color-mix(in srgb, var(--m-accent) 40%, transparent), var(--sh-xs); background: color-mix(in srgb, var(--m-accent) 8%, var(--m-surface)); }
 html.margin-watch .video-toolbar-left-item .video-toolbar-item-text { font-family: var(--m-mono); font-size: 13px !important; }
+html.margin-watch .video-share-wrap .video-share-info { display: grid !important; width: auto !important; white-space: nowrap; }
+html.margin-watch .video-share-wrap .video-share-info-text { position: relative !important; grid-area: 1 / 1; }
 
 /* 简介 / 标签 / 评论：表面卡片 */
 html.margin-watch .video-desc-container,
@@ -145,6 +155,7 @@ html.margin-watch .up-panel-container {
   padding: 16px 16px; margin-bottom: 16px; height: auto !important;
 }
 html.margin-watch .up-info-container { margin: 0 !important; }
+html.margin-watch:not(.margin-wide):not(.margin-webscreen) .right-container { padding-top: var(--m-author-pad, 0px) !important; }
 html.margin-watch .up-detail-top .up-name { font-weight: 600 !important; color: var(--m-ink) !important; }
 html.margin-watch .up-avatar-wrap .bili-avatar { box-shadow: 0 0 0 1px var(--m-line); border-radius: 50%; }
 html.margin-watch .follow-btn, html.margin-watch .follow-btn-inner { border-radius: 999px !important; }
@@ -226,6 +237,10 @@ html.margin-watch .fixed-sidenav-storage-item {
 html.margin-watch { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--m-ink) 22%, transparent) transparent; }
 /* 宽屏模式：右栏让到播放器下方 */
 html.margin-skin.margin-wide .right-container { padding-top: var(--m-wide-pad, 0px) !important; }
+/* 宽屏播放器跨越两栏，原生左栏吸顶会盖住继续滚动的 UP 卡片。 */
+html.margin-watch.margin-wide .left-container { position: relative !important; top: auto !important; }
+/* 整栏已由映间让到播放器下方，原生弹幕块的宽屏占位会重复推低后续推荐 / 合集。 */
+html.margin-watch.margin-wide .right-container #danmukuBox { margin-top: 0 !important; }
 
 /* 映间三连：藏掉原版长按动效（工具栏项里的附加层），用描边进度 + 弹起碎光代替 */
 html.margin-triple .toolbar-left-item-wrap > :not(.video-toolbar-left-item):not(.van-popover):not(.van-popper) { display: none !important; }
@@ -392,7 +407,9 @@ html.margin-watch .m-wcard {
   background: var(--m-surface); border-radius: 20px; box-shadow: var(--ring), var(--sh-sm);
 }
 html.margin-watch .m-wcard:not(.from-player) { margin-top: 0; }
+html.margin-wcard.margin-watch .bpx-player-container:not([data-screen]),
 html.margin-wcard.margin-watch .bpx-player-container[data-screen="normal"] { box-shadow: none !important; border-radius: 20px 20px 0 0 !important; }
+html.margin-wcard.margin-watch .bpx-player-container:not([data-screen]) .bpx-player-video-area,
 html.margin-wcard.margin-watch .bpx-player-container[data-screen="normal"] .bpx-player-video-area { border-radius: 20px 20px 0 0; }
 html.margin-wcard.margin-watch .bpx-player-sending-area,
 html.margin-wcard.margin-watch .bpx-player-sending-area .bpx-player-sending-bar { border-radius: 0 !important; background: transparent !important; }
@@ -415,12 +432,12 @@ html.margin-watch .video-page-card-small .info { align-self: center; }
 /* #2：UP 主悬停名片（B 站 .usercard-wrap）换成映间风格：大圆角卡、渐隐横幅、衬线名字、等宽统计、胶囊按钮 */
 html.margin-watch .usercard-wrap { border: 0 !important; background: transparent !important; box-shadow: none !important; }
 html.margin-watch .usercard-wrap .user-card-m-exp {
-  width: 360px !important; border: 0 !important; border-radius: 20px !important; overflow: hidden !important;
+  max-width: calc(100vw - 24px) !important; border: 0 !important; border-radius: 20px !important; overflow: hidden !important;
   background: var(--m-surface) !important; color: var(--m-ink) !important;
   box-shadow: 0 0 0 1px var(--m-line), 0 24px 48px -12px rgb(0 0 0 / .22), 0 8px 16px -8px rgb(0 0 0 / .12) !important;
   animation: m-ucard-in 200ms cubic-bezier(.23, 1, .32, 1) both;
 }
-@keyframes m-ucard-in { from { opacity: 0; transform: translateY(4px) scale(.98); } }
+@keyframes m-ucard-in { from { opacity: 0; } }
 html.margin-watch .usercard-wrap .bg { height: 96px !important; border-radius: 0 !important; background-size: cover !important; background-position: center !important;
   -webkit-mask-image: linear-gradient(#000 40%, transparent); mask-image: linear-gradient(#000 40%, transparent); }
 html.margin-watch .usercard-wrap .user-info-wrapper { padding: 0 20px !important; margin-top: -36px !important; position: relative; }

@@ -39,7 +39,7 @@ export class PageShell {
     this.root.append(h('style', {}, css + '\n' + pagesCss));
     this.filter = new FilterRuntime(settings);
     this.panel = createSettingsPanel(() => this.settings, () => this.bg.shader);
-    const fav = createFavorites((g) => attachPreview(g, () => this.settings.hoverPreview), undefined, this.filter);
+    const fav = createFavorites((g) => attachPreview(g, () => this.settings.hoverPreview), () => this.settings.favDirect, this.filter);
     const later = createLaterDrawer(() => this.app, this.filter);
     const hist = createHistoryDrawer();
     panels.fav = fav;
@@ -47,6 +47,7 @@ export class PageShell {
     panels.hist = hist;
     this.head = createHeader({
       onTheme: () => this.toggleTheme(),
+      onSettings: () => this.panel.sheet.open(),
       msgRemind: () => this.settings.msgRemind,
       filter: this.filter,
       tabs: [
@@ -54,40 +55,31 @@ export class PageShell {
         'separator',
         { title: '收藏', icon: ICONS.fav, run: () => fav.open() },
         { title: '稍后', icon: ICONS.later, run: () => later.open() },
-        { title: '设置', icon: ICONS.gear, run: () => this.panel.sheet.open() },
       ],
     });
     this.sunMoon = this.head.sunMoon;
     this.main = h('main', { class: `main tk tk-${kind}` });
     const exit = h('button', { class: 'ghost small', type: 'button', onclick: () => { sessionStorage.setItem('margin:off', '1'); location.reload(); } }, '本次回到 B 站原版');
-    this.app = h('div', { class: 'app' },
+    this.app = h('div', { class: 'app','data-glass':settings.glass },
       this.bg.el, this.head.el, this.main,
       h('footer', { class: 'foot tk-foot' }, exit, h('span', {}, '映间 MARGIN · 非 B 站官方')),
       this.panel.sheet.el, fav.el, later.el, hist.el,
     );
-    // 侧板开着时背景定格：侧板的毛玻璃（backdrop-filter）只有在底下画面变化时才需要每帧重算（v0.45）
-    this.app.addEventListener('margin:sheet', () => { const on = !!this.app.querySelector('.sheet-layer[data-open="true"]'); this.app.classList.toggle('sheeted', on); this.bg.hold('sheet', on); });
+    // 标记抽屉状态；大面板使用实底，可见背景保持动态。
+    this.app.addEventListener('margin:sheet', () => { const on = !!this.app.querySelector('.sheet-layer[data-open="true"]'); this.app.classList.toggle('sheeted', on); });
     this.root.append(this.app);
     const lg = filtersIn(this.root);
     this.head.glass.forEach((g) => attachGlass(g, lg));
     attachGlass(this.head.thumb, lg, { blur: 2, strength: 0.4 });
     this.applyTheme();
     this.media.addEventListener('change', () => this.applyTheme());
-    // 滚动时背景停一停，毛玻璃不用每帧重算（v0.43）
-    let st = 0;
-    const onScroll = () => {
-      if (!st) this.bg.hold('scroll', true);
-      clearTimeout(st);
-      st = window.setTimeout(() => { st = 0; this.bg.hold('scroll', false); }, 160);
-    };
-    this.app.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('scroll', onScroll, { passive: true });
   }
 
   /** 页面里的胶囊控件也做成液态玻璃 */
   glass(el: HTMLElement): void { attachGlass(el, filtersIn(this.root)); }
 
   update(s: Settings): void {
+    this.app.dataset.glass = s.glass;
     const prev = this.settings;
     this.settings = s;
     this.filter.update(s);

@@ -1,4 +1,5 @@
 import { dislike, popular, recommended, type Video } from '../api/feed';
+import { openBili } from '../navigation';
 import { appDislike, appRecommended } from '../api/appfeed';
 import { noteNegative, rerank, resetRank } from '../rank';
 import { followClassics, resetClassics } from '../api/space';
@@ -54,13 +55,19 @@ export class MarginApp {
   private appHinted = false;
   private page = 1;
   private loading = false;
-  /** #39：换一批后要恢复的滚动位置；切分类标签或首次加载时为 null（正常回到顶部） */
-  private restoreTop: number | null = null;
+  /** 换一批进行中：按钮转圈，旧列表留在屏幕上等新一批就绪 */
+  private refreshBtn: HTMLElement | null = null;
+  /** 吸顶分类栏：换一批后滚到它吸住的位置，即视频区顶部 */
+  private barEl: HTMLElement | null = null;
+  /** 分类栏前的 1px 标记（不参与吸顶），用来算分类栏的流式位置 */
+  private barMarkEl: HTMLElement | null = null;
+  private anchorTimer = 0;
   private done = false;
   private items: Video[] = [];
   private seen = new Set<string>();
   private filter!: FilterRuntime;
   private gen = 0;
+  private fillRetry = 0;
   private media = matchMedia('(prefers-color-scheme: dark)');
 
   constructor(private settings: Settings) {
@@ -75,6 +82,7 @@ export class MarginApp {
   }
 
   update(s: Settings): void {
+    if (this.app) this.app.dataset.glass = s.glass;
     const prev = this.settings;
     this.settings = s;
     if (this.filter.update(s)) this.repaint();
@@ -173,7 +181,7 @@ export class MarginApp {
     // v0.20：足迹卡片改用 21st Glass Calendar 的 CSS 玻璃，不再走 GL 折射透镜
     const later = createLaterDrawer(() => this.app, this.filter);
     const palette = createCommandPalette([
-      { id: 'refresh', title: '换一批推荐', cat: '操作', icon: ICONS.refresh, keys: ['刷新', 'refresh'], run: () => this.reload() },
+      { id: 'refresh', title: '换一批推荐', cat: '操作', icon: ICONS.refresh, keys: ['刷新', 'refresh'], run: () => this.reload(true) },
       { id: 'rcmd', title: '看推荐', cat: '跳转', icon: ICONS.moments, keys: ['首页'], run: () => (this.app.querySelector('.tab[data-tab=rcmd]') as HTMLElement)?.click() },
       { id: 'classic', title: '看关注的 UP 的老视频', cat: '跳转', icon: ICONS.history, keys: ['老片', 'classic'], run: () => (this.app.querySelector('.tab[data-tab=classic]') as HTMLElement)?.click() },
       { id: 'popular', title: '看热门', cat: '跳转', icon: ICONS.heat, keys: ['popular', '排行'], run: () => (this.app.querySelector('.tab[data-tab=popular]') as HTMLElement)?.click() },
@@ -183,10 +191,10 @@ export class MarginApp {
       { id: 'settings', title: '打开设置', cat: '操作', icon: ICONS.gear, keys: ['背景', '过滤', '屏蔽'], run: () => this.panel.sheet.open() },
       { id: 'top', title: '回到顶部', cat: '操作', icon: ICONS.top, run: () => this.app.scrollTo({ top: 0, behavior: 'smooth' }) },
       { id: 'later', title: '稍后再看', cat: '跳转', icon: ICONS.later, keys: ['watchlater'], run: () => later.open() },
-      { id: 'moments', title: '动态', cat: '跳转', icon: ICONS.moments, run: () => window.open('https://t.bilibili.com/', '_blank', 'noopener') },
-      { id: 'live', title: '直播', cat: '跳转', icon: ICONS.live, keys: ['live', 'zhibo'], run: () => window.open('https://live.bilibili.com/', '_blank', 'noopener') },
-      { id: 'message', title: '消息', cat: '跳转', icon: ICONS.message, run: () => window.open('https://message.bilibili.com/', '_blank', 'noopener') },
-      { id: 'history', title: '观看历史', cat: '跳转', icon: ICONS.history, run: () => window.open('https://www.bilibili.com/history', '_blank', 'noopener') },
+      { id: 'moments', title: '动态', cat: '跳转', icon: ICONS.moments, run: () => openBili('https://t.bilibili.com/') },
+      { id: 'live', title: '直播', cat: '跳转', icon: ICONS.live, keys: ['live', 'zhibo'], run: () => openBili('https://live.bilibili.com/') },
+      { id: 'message', title: '消息', cat: '跳转', icon: ICONS.message, run: () => openBili('https://message.bilibili.com/') },
+      { id: 'history', title: '观看历史', cat: '跳转', icon: ICONS.history, run: () => openBili('https://www.bilibili.com/history') },
       { id: 'off', title: '本次回到 B 站原版', cat: '操作', icon: ICONS.exit, keys: ['原版', '关闭'], run: () => { sessionStorage.setItem('margin:off', '1'); location.reload(); } },
     ]);
     const cm = createContextMenu();
@@ -209,17 +217,20 @@ export class MarginApp {
     };
     tabs.append(mkTab('rcmd', '推荐'), mkTab('popular', '热门'), mkTab('classic', '关注老片'));
     const refresh = h('button', { class: 'ghost refresh', type: 'button', title: '换一批', onclick: () => this.reload(true) }, icon(ICONS.refresh), h('span', {}, '换一批'));
+    this.refreshBtn = refresh;
     // 上一批（评论区 K-aloy：习惯 biliplus 的首页回退）：换一批之后可以回到刚才那批，再点一次又回来
     this.backBtn = h('button', { class: 'ghost refresh back', type: 'button', title: '回到上一批', hidden: true, onclick: () => this.restore() }, icon(ICONS.back), h('span', {}, '上一批'));
 
     // 吸顶时分类栏变成液态玻璃胶囊，日期行收起
     head.el.classList.add('no-search');
     const barMark = h('div', { class: 'bar-mark', 'aria-hidden': 'true' });
+    this.barMarkEl = barMark;
     // 首页主搜索：居中大胶囊（和搜索页同款），顶栏的小搜索框在首页隐藏，避免两个入口
     const heroS = createHeroSearch(() => this.app);
     const hero = heroS.el;
     this.headEl = head.el; this.heroEl = hero;
     const bar = h('div', { class: 'bar' }, h('div', { class: 'eyebrow' }, h('span', {}, todayLabel()), h('span', { class: 'en' }, 'For You'), h('span', { class: 'no' }, issueNo())), h('div', { class: 'bar-row' }, tabs, h('div', { class: 'bar-acts' }, this.backBtn, refresh)));
+    this.barEl = bar;
 
     this.grid = h('section', { class: 'grid home-grid', 'aria-live': 'polite' });
     this.status = h('div', { class: 'status' });
@@ -240,7 +251,7 @@ export class MarginApp {
       ['feed', [this.grid, this.status, this.sentinel]],
       ['footer', [footer]],
     ]);
-    this.app = h('div', { class: 'app home' },
+    this.app = h('div', { class: 'app home', 'data-glass':this.settings.glass },
       this.bg.el,
       header,
       main,
@@ -250,8 +261,8 @@ export class MarginApp {
       later.el,
       cm.el,
     );
-    // 侧板开着时背景定格：侧板的毛玻璃（backdrop-filter）只有在底下画面变化时才需要每帧重算（v0.45）
-    this.app.addEventListener('margin:sheet', () => { const on = !!this.app.querySelector('.sheet-layer[data-open="true"]'); this.app.classList.toggle('sheeted', on); this.bg.hold('sheet', on); });
+    // 标记抽屉状态；大面板使用实底，可见背景保持动态。
+    this.app.addEventListener('margin:sheet', () => { const on = !!this.app.querySelector('.sheet-layer[data-open="true"]'); this.app.classList.toggle('sheeted', on); });
     this.root.append(this.app);
     this.applyOrder(this.settings.homeOrder);
     // 汇流背景的点线汇向首页搜索栏（搜索框隐藏时汇向屏幕中心）
@@ -332,10 +343,12 @@ export class MarginApp {
     this.tabMem.delete(id);
     const s = m.s!;
     this.gen++;
+    clearTimeout(this.fillRetry); this.fillRetry = 0;
     this.items = s.items.slice();
     this.seen = new Set(s.items.map((v) => v.bvid));
     this.page = s.page; this.appIdx = s.appIdx; this.done = s.done; this.round = s.round;
     this.loading = false;
+    this.refreshBusy(false);
     this.snap = m.back;
     if (this.backBtn) this.backBtn.hidden = !this.snap;
     this.status.replaceChildren();
@@ -357,24 +370,26 @@ export class MarginApp {
     if (!s || s.tab !== this.tab) return;
     this.snap = this.snapshot();
     this.gen++;
+    clearTimeout(this.fillRetry); this.fillRetry = 0;
     this.items = s.items.slice();
     this.seen = new Set(s.items.map((v) => v.bvid));
     this.page = s.page; this.appIdx = s.appIdx; this.done = s.done; this.round = s.round;
     this.loading = false;
+    this.refreshBusy(false);
     this.status.replaceChildren();
-    this.app.scrollTo({ top: 0 });
+    this.app.scrollTo({ top: this.videoTop() });
     this.repaint();
   }
 
   private reload(keep = false): void {
-    // #39：点「换一批」时记住当前滚动位置，等首批卡片渲染完再恢复；切分类标签（keep=false）仍回到顶部
-    this.restoreTop = keep ? this.app.scrollTop || null : null;
+    if (keep && this.refreshBtn?.getAttribute('aria-busy') === 'true') return;
+    const prev = { snap: this.snap, page: this.page, round: this.round, appIdx: this.appIdx, done: this.done };
+    const gen = ++this.gen;
+    clearTimeout(this.fillRetry); this.fillRetry = 0;
     this.snap = keep && this.items.length ? this.snapshot() : null;
     if (this.backBtn) this.backBtn.hidden = !this.snap;
-    this.gen++;
-    this.grid.replaceChildren();
-    this.items = [];
-    this.seen.clear();
+    this.grid.querySelectorAll('.card.sk').forEach((n) => n.remove());
+    this.status.replaceChildren();
     this.done = false;
     this.loading = false;
     this.page = 1;
@@ -382,9 +397,99 @@ export class MarginApp {
     this.appIdx = 0;
     resetRank();
     resetClassics();
-    // 换一批不动滚动位置（#39）；其余情况回到顶部
-    if (!keep) this.app.scrollTo({ top: 0 });
-    this.load();
+    if (!keep) {
+      this.refreshBusy(false);
+      this.grid.replaceChildren();
+      this.items = [];
+      this.seen.clear();
+      this.app.scrollTo({ top: 0 });
+      this.load();
+      return;
+    }
+    // #39：换一批时旧列表留在原位，等新一批拉齐后整块替换；中途不再清空网格 / 闪骨架
+    void this.swapFeed(gen, prev);
+  }
+
+  /** 换一批：旧列表撑到新一批就绪，整块替换后回到视频区顶部；本来就在页面顶部时原地刷新，不往下跳 */
+  private async swapFeed(gen: number, prev: { snap: Snap | null; page: number; round: number; appIdx: number; done: boolean }): Promise<void> {
+    const fresh = { items: [] as Video[], seen: new Set<string>() };
+    const frag = document.createDocumentFragment();
+    const target = this.videoTop();
+    // 已经停在视频区顶部以上（含页面最顶部）就不动，只有往下翻过才拉回来
+    const stay = this.app.scrollTop <= target;
+    // 往下翻过时，新列表太短会滚不到视频区顶部（scrollTop 被夹住、反而露出顶部区块），先按视口估个卡数拉够
+    const need = stay ? 0 : this.cardsToFillViewport();
+    let got = 0;
+    this.loading = true;
+    this.refreshBusy(true);
+    try {
+      for (let batches = 0; batches < 4; batches++) {
+        if (batches && (this.done || got >= need)) break;
+        const list = await this.fetchBatchRetry(fresh, gen);
+        if (!list || gen !== this.gen) return;
+        await this.filter.prepare(list.map((v) => v.bvid));
+        if (gen !== this.gen) return;
+        const added = this.appendCards(list, fresh, frag);
+        got += added;
+        // 已经拉到东西、下一批却全是重复 / 被过滤：再拉也是空转
+        if (!added && got) break;
+      }
+      if (gen !== this.gen) return;
+      this.items = fresh.items;
+      this.seen = fresh.seen;
+      // 换列表时关掉滚动锚定：否则吸顶栏展开/收起、骨架进出会让浏览器反复补偿 scrollTop，页面来回滑
+      clearTimeout(this.anchorTimer);
+      this.app.style.overflowAnchor = 'none';
+      this.grid.replaceChildren(frag);
+      // 整块换掉时不做入场动画：否则新卡片会从透明淡入，看起来又像整页闪了一下
+      this.grid.querySelectorAll('.card').forEach((n) => n.classList.add('still'));
+      if (this.done) this.status.replaceChildren(h('span', {}, '没有更多了'));
+      // 翻过视频区才拉回顶部；本来就在顶部就原地不动。不做长距离平滑滚动，避免一路划过顶部区块
+      if (!stay) this.app.scrollTop = target;
+      this.anchorTimer = window.setTimeout(() => { this.app.style.overflowAnchor = ''; }, 300);
+    } catch (err) {
+      if (gen !== this.gen) return;
+      // 失败时旧列表原样保留，游标和「上一批」也退回去，不影响继续浏览
+      this.snap = prev.snap;
+      if (this.backBtn) this.backBtn.hidden = !this.snap;
+      this.page = prev.page; this.round = prev.round; this.appIdx = prev.appIdx; this.done = prev.done;
+      toast(this.app, `换一批失败：${(err as Error).message}`);
+    } finally {
+      if (gen === this.gen) { this.loading = false; this.refreshBusy(false); }
+    }
+    if (gen === this.gen) requestAnimationFrame(() => this.fillIfShort());
+  }
+
+  /** 落回视频区顶部至少需要多少张卡：按旧网格的行高和当前视口估算，宁可多一行 */
+  private cardsToFillViewport(): number {
+    const cols = getComputedStyle(this.grid).gridTemplateColumns.split(' ').filter(Boolean).length || 1;
+    const cards = this.grid.querySelectorAll('.card:not(.sk)').length;
+    const rows = Math.max(1, Math.ceil(cards / cols));
+    const rowH = Math.max(160, this.grid.getBoundingClientRect().height / rows);
+    const zoom = Number(getComputedStyle(this.app).getPropertyValue('--margin-zoom')) || 1;
+    const sticky = this.barEl ? (parseFloat(getComputedStyle(this.barEl).top) || 0) * zoom : 0;
+    const needH = Math.max(0, this.app.clientHeight - sticky - 120);
+    return (Math.ceil(needH / rowH) + 1) * cols;
+  }
+
+  /** 视频区顶部：分类栏滚到吸顶位置，第一行卡片正好从栏下开始。
+   *  sticky 元素的 offsetTop / rect 会随吸顶变化，所以用 bar-mark 和 grid 算流式位置；
+   *  首页区块可排序，取两者中靠上的那个（默认是分类栏在前）。 */
+  private videoTop(): number {
+    const bar = this.barEl, mark = this.barMarkEl;
+    if (!bar || !mark) return 0;
+    const zoom = Number(getComputedStyle(this.app).getPropertyValue('--margin-zoom')) || 1;
+    const sticky = (parseFloat(getComputedStyle(bar).top) || 0) * zoom;
+    const appTop = this.app.getBoundingClientRect().top;
+    const flowTop = (el: Element) => el.getBoundingClientRect().top - appTop + this.app.scrollTop;
+    return Math.max(0, Math.min(flowTop(mark), flowTop(this.grid)) - sticky);
+  }
+
+  private refreshBusy(on: boolean): void {
+    if (!this.refreshBtn) return;
+    this.refreshBtn.classList.toggle('busy', on);
+    if (on) this.refreshBtn.setAttribute('aria-busy', 'true');
+    else this.refreshBtn.removeAttribute('aria-busy');
   }
 
   /** 过滤条件变化后，用已加载的数据重画网格 */
@@ -420,8 +525,73 @@ export class MarginApp {
     if (left < 1200 || r.top < innerHeight + 900) this.load();
   }
 
+  /** 按当前分类拉一批视频，游标随之前进；ctx 是换一批时用的独立去重 / 重排上下文 */
+  private async fetchBatch(ctx?: { items: Video[]; seen: Set<string> }): Promise<Video[]> {
+    const gen = this.gen;
+    let list: Video[];
+    if (this.tab === 'rcmd' && this.settings.appFeed) {
+      // App 推荐流（v0.48 实验）：一批 10 来个，连取两批凑够一屏
+      const a = await appRecommended(this.appIdx);
+      if (gen !== this.gen) return [];
+      const b = await appRecommended(a.next);
+      if (gen !== this.gen) return [];
+      this.appIdx = b.next;
+      list = [...a.list, ...b.list];
+      if (!a.personal && !this.appHinted) { this.appHinted = true; toast(this.app, '正在用 App 推荐（未授权，不是个性化的）。在设置 → 实验功能里扫码授权'); }
+    } else if (this.tab === 'rcmd') {
+      const batches = await Promise.all([recommended(this.round), recommended(this.round + 1)]);
+      if (gen !== this.gen) return [];
+      this.round += 2;
+      list = batches.flat();
+    } else if (this.tab === 'classic') {
+      const me = (await account())?.mid;
+      if (gen !== this.gen) return [];
+      if (!me) throw new Error('登录后才能看关注的 UP 主');
+      const r = await followClassics(me);
+      if (gen !== this.gen) return [];
+      list = r.list;
+      this.done = r.done;
+    } else {
+      const r = await popular(this.page++);
+      if (gen !== this.gen) return [];
+      list = r.list;
+      this.done = r.done;
+    }
+    if (this.tab === 'rcmd' && this.settings.rerank) {
+      const items = ctx?.items ?? this.items;
+      const seen = ctx?.seen ?? this.seen;
+      list = await rerank(list, items.slice(-3).map((x) => x.mid), seen).catch(() => list);
+    }
+    return list;
+  }
+
+  /** 换一批时静默重试两次，和列表加载的容错保持一致 */
+  private async fetchBatchRetry(ctx: { items: Video[]; seen: Set<string> }, gen: number): Promise<Video[] | null> {
+    for (let attempt = 0; ; attempt++) {
+      try { return await this.fetchBatch(ctx); } catch (err) {
+        if (attempt >= 2) throw err;
+        await new Promise((r) => window.setTimeout(r, 800 * (attempt + 1)));
+        if (gen !== this.gen) return null;
+      }
+    }
+  }
+
+  /** 过滤、去重后把卡片追加到目标节点；返回实际渲染的条数 */
+  private appendCards(list: Video[], ctx: { items: Video[]; seen: Set<string> }, into: ParentNode): number {
+    let added = 0;
+    for (const v of list) {
+      if (ctx.seen.has(v.bvid)) continue;
+      ctx.seen.add(v.bvid);
+      ctx.items.push(v);
+      if (!this.filter.allows(targetOfVideo(v))) continue;
+      into.append(videoCard(v, ctx.items.length - 1, this.cardOpts()));
+      added++;
+    }
+    return added;
+  }
+
   private async load(attempt = 0): Promise<void> {
-    if (this.loading || this.done) return;
+    if (this.loading || this.done || this.fillRetry) return;
     this.loading = true;
     const gen = this.gen;
     const sk = skeleton(this.grid.children.length ? 4 : 12);
@@ -430,50 +600,14 @@ export class MarginApp {
     this.status.replaceChildren();
     let added = 0;
     try {
-      let list: Video[];
-      if (this.tab === 'rcmd' && this.settings.appFeed) {
-        // App 推荐流（v0.48 实验）：一批 10 来个，连取两批凑够一屏
-        const a = await appRecommended(this.appIdx);
-        const b = await appRecommended(a.next);
-        this.appIdx = b.next;
-        list = [...a.list, ...b.list];
-        if (!a.personal && !this.appHinted) { this.appHinted = true; toast(this.app, '正在用 App 推荐（未授权，不是个性化的）。在设置 → 实验功能里扫码授权'); }
-      } else if (this.tab === 'rcmd') {
-        const batches = await Promise.all([recommended(this.round), recommended(this.round + 1)]);
-        this.round += 2;
-        list = batches.flat();
-      } else if (this.tab === 'classic') {
-        const me = (await account())?.mid;
-        if (!me) throw new Error('登录后才能看关注的 UP 主');
-        const r = await followClassics(me);
-        list = r.list;
-        this.done = r.done;
-      } else {
-        const r = await popular(this.page++);
-        list = r.list;
-        this.done = r.done;
-      }
-      if (this.tab === 'rcmd' && this.settings.rerank) list = await rerank(list, this.items.slice(-3).map((x) => x.mid), this.seen).catch(() => list);
+      const list = await this.fetchBatch();
       if (gen !== this.gen) return;
       // 关键词也要能命中视频标签：先把这批视频的标签取回来（没有关键词时立即返回）
       await this.filter.prepare(list.map((v) => v.bvid));
       if (gen !== this.gen) return;
       skNodes.forEach((n) => (n as Element).remove());
-      const start = this.grid.children.length;
-      for (const v of list) {
-        if (this.seen.has(v.bvid)) continue;
-        this.seen.add(v.bvid);
-        this.items.push(v);
-        if (!this.filter.allows(targetOfVideo(v))) continue;
-        this.grid.append(videoCard(v, start + added++, this.cardOpts()));
-      }
+      added = this.appendCards(list, { items: this.items, seen: this.seen }, this.grid);
       if (this.done) this.status.replaceChildren(h('span', {}, '没有更多了'));
-      // #39：首批卡片进 DOM 后再恢复换一批前的滚动位置（列表重建时 scrollTop 会归零）
-      if (this.restoreTop != null) {
-        const y = Math.max(0, Math.min(this.restoreTop, this.app.scrollHeight - this.app.clientHeight));
-        this.restoreTop = null;
-        this.app.scrollTo({ top: y });
-      }
     } catch (err) {
       if (gen !== this.gen) return;
       skNodes.forEach((n) => (n as Element).remove());
@@ -487,9 +621,13 @@ export class MarginApp {
     // 被过滤掉太多时自动补一批
     if (gen === this.gen && added < 6 && attempt < 4) this.load(attempt + 1);
     else if (gen === this.gen) {
-      requestAnimationFrame(() => this.fillIfShort());
       // 连续几批都被过滤或重复：稍等再补，不让列表停在底部
-      if (added === 0) window.setTimeout(() => { if (gen === this.gen) this.fillIfShort(); }, 1500);
+      if (added === 0) this.fillRetry = window.setTimeout(() => {
+        if (gen !== this.gen) return;
+        this.fillRetry = 0;
+        this.fillIfShort();
+      }, 1500);
+      else requestAnimationFrame(() => this.fillIfShort());
     }
   }
 }

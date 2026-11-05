@@ -15,6 +15,9 @@ import liveCss from './live.css?inline';
 import globalCss from './global.css?inline';
 import { setUserReducedMotion } from './motion';
 import { startNativeFilter } from './native-filter';
+import { installAppNavigation } from './navigation';
+import { setSponsorSkip } from './sponsor-skip';
+import { applyAppearance } from './appearance';
 
 // Firefox：内容脚本自带的 fetch 以扩展身份发请求，B 站接口收不到登录 cookie（一直显示未登录）。
 // Firefox 另给了页面身份的 content.fetch，B 站自家域名的请求改走它；其他域名（天气等）照旧。Chrome 没有 content，不受影响。
@@ -36,6 +39,7 @@ type Pages = {
   history: typeof import('./pages/history');
   feed: typeof import('./pages/feed');
   detail: typeof import('./pages/detail');
+  'space-hooks': typeof import('./pages/space-hooks');
 };
 /** 按需加载页面模块；content script 不能是 ES module，但可以动态 import 扩展里的 ES 模块 */
 const load = <K extends keyof Pages>(name: K): Promise<Pages[K]> => import(/* @vite-ignore */ chrome.runtime.getURL(`pages/${name}.js`));
@@ -54,6 +58,10 @@ function mountGlobalCss(): void {
 
 /** 设置开关映射到文档级 class；HTML 只负责命中 CSS，具体逻辑在各自组件里 */
 function applyGlobalUi(s: Settings): void {
+  const active = s.enabled && !sessionStorage.getItem('margin:off') && !offByUrl();
+  applyAppearance(s,active);
+  installAppNavigation(active);
+  setSponsorSkip(active && s.sponsorSkip);
   document.documentElement.classList.toggle('margin-ads-hide', s.enabled && s.hideAds);
   setUserReducedMotion(s.enabled && s.reduceMotion);
 }
@@ -161,7 +169,7 @@ async function startWatch(kind: SkinKind = 'watch'): Promise<void> {
 function spaceNative(): void {
   document.documentElement.classList.add('margin-space-native');
   // 原生空间子页：拦截收藏夹 / 历史 / 稍后再看的入口，改成开映间抽屉（#52 后续）
-  void import('./space-hooks').then((mod) => mod.installSpaceHooks()).catch(() => { /* 抽屉可缺省 */ });
+  load('space-hooks').then((mod) => mod.installSpaceHooks()).catch(() => { /* 抽屉可缺省 */ });
   let last = location.href;
   const check = (href: string) => {
     if (href === last) return;
@@ -219,7 +227,7 @@ async function start(): Promise<void> {
   if (isWatch()) return startWatch();
   const sm = spaceMatch();
   // 空间页的投稿接口依赖原版脚本写的指纹 cookie，不拦会 412
-  if (sm) return takeover(load('space'), (m, st) => new m.SpaceApp(st, Number(sm[1]), sm[2] === 'dynamic' ? 'dynamic' : 'video'), false);
+  if (sm) return takeover(load('space'), (m, st) => new m.SpaceApp(st, Number(sm[1]), sm[2] === 'dynamic' ? 'dynamic' : new URLSearchParams(location.search).get('margin_tab') === 'collections' ? 'collections' : 'video'), false);
   if (isMessage()) return takeover(load('message'), (m, st) => new m.MessageApp(st));
   if (isHistory()) return takeover(load('history'), (m, st) => new m.HistoryApp(st));
   if (isFeed()) return takeover(load('feed'), (m, st) => new m.FeedApp(st));

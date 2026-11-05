@@ -12,7 +12,7 @@ export function laterButton(bvid: string): HTMLElement {
     b.dataset.state = r.ok ? 'ok' : '';
     b.title = r.msg;
     b.setAttribute('aria-label', r.msg);
-    if (r.ok) b.replaceChildren(icon('<path d="m5 12 5 5 9-10"/>'));
+    if (r.ok) b.replaceChildren(icon(ICONS.check));
     else { b.classList.add('err'); setTimeout(() => b.classList.remove('err'), 1600); }
   });
   return b;

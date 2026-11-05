@@ -5,6 +5,8 @@
  */
 import { APP, APP_AUTH_KEY, FEED_BASE, appSign, toAppItem, type AppAuth, type AppItem, type AppMessage } from '../shared/app-feed';
 import { ACTIVITY_KEY, SLOTS_KEY, applyBeat, dayKey, hhmm, mergeActivity, sanitizeActivity, type Activity, type FpMessage } from '../shared/activity';
+import { getSponsorSegments } from './sponsor';
+import type { SponsorMessage } from '../shared/sponsor';
 
 let queue: Promise<unknown> = Promise.resolve();
 const serial = <T>(fn: () => Promise<T>): Promise<T> => { const p = queue.then(fn, fn); queue = p.catch(() => {}); return p; };
@@ -94,7 +96,8 @@ async function handleApp(m: AppMessage): Promise<unknown> {
   return { ok: false };
 }
 
-chrome.runtime.onMessage.addListener((m: FpMessage | AppMessage, _sender, reply) => {
+chrome.runtime.onMessage.addListener((m: FpMessage | AppMessage | SponsorMessage, _sender, reply) => {
+  if (m && m.margin === 'sponsor') { getSponsorSegments(m.bvid).then((segments) => reply({ ok: true, segments }), () => reply({ ok: false })); return true; }
   if (m && m.margin === 'app') { handleApp(m).then(reply, (e) => reply({ ok: false, error: String((e as Error)?.message || e) })); return true; }
   if (!m || m.margin !== 'fp') return;
   serial(() => handle(m)).then(reply, (e) => reply({ ok: false, error: String(e) }));

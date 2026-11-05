@@ -24,7 +24,12 @@ function feedItem(i, kind) {
   const d = m.module_dynamic;
   if (kind === 'av') { d.desc = { text: '新视频上线：这期把三家播放器的进度条拆开来看。' }; d.major = { archive: { bvid: v.bvid, title: v.title, cover: v.pic, duration_text: mmss(v.dur), stat: { play: `${(v.play / 1e4).toFixed(1)}万` }, desc: v.desc } }; }
   if (kind === 'draw') d.major = { opus: { title: '这周的字体笔记', summary: { text: '霞鹜新致宋的标点挤压做得很舒服。' }, pics: [0, 1, 2].map((j) => ({ url: P[i + j].pic })) } };
-  if (kind === 'word') d.major = { opus: { summary: { text: '有人问映间为什么没有 logo。因为页面本身就是名片。' } } };
+  if (kind === 'word') d.major = { opus: { summary: {
+    text: '有人问映间为什么没有 logo。[开心]因为页面本身就是名片。',
+    rich_text_nodes: [{ text: '有人问映间为什么没有 logo。' },
+      { type: 'RICH_TEXT_NODE_TYPE_EMOJI', text: '[开心]', emoji: { icon_url: 'https://i0.hdslb.com/bfs/emote/happy.gif' } },
+      { text: '因为页面本身就是名片。' }],
+  } } };
   return { id_str: String(900000 + i), type: kind, modules: m };
 }
 function feedItems() {
@@ -78,7 +83,19 @@ export function apiBody(u) {
   if (u.includes('fav/resource/list')) return { code: 0, data: { has_more: false, medias: P.slice(0, 8).map((v) => ({ type: 2, attr: 0, bvid: v.bvid, title: v.title, cover: v.pic, duration: v.dur, upper: { name: v.name, mid: v.mid, face: v.face }, cnt_info: { play: v.play, danmaku: 100 }, fav_time: v.pub })) } };
   if (u.includes('fav/folder/')) return { code: 0, data: 0 };
   if (u.includes('nav/stat')) return { code: 0, data: { following: 218, follower: 1342, dynamic_count: 57 } };
+  if (u.includes('/x/relation/followings')) return { code: 0, data: { total: 12,
+    list: P.slice(0, 12).map((v, i) => ({ mid: 100 + i, uname: v.name, face: v.face })),
+  } };
   if (u.includes('feed/all/update')) return { code: 0, data: { update_num: 6 } };
+  if (u.includes('web-dynamic/v1/detail')) return { code: 0, data: { item: {
+    ...feedItem(1, 'av'), basic: { comment_type: 17, comment_id_str: '900001' },
+  } } };
+  if (u.includes('/x/v2/reply/add')) return { code: 0, data: {} };
+  if (u.includes('/x/v2/reply?')) return { code: 0, data: {
+    top_replies: [{ rpid: 11, member: { uname: '置顶作者', mid: 1 }, content: {
+      message: '置顶评论[开心]', emote: { '[开心]': { url: 'https://i0.hdslb.com/bfs/emote/happy.gif' } },
+    } }], replies: [{ rpid: 12, member: { uname: '热评作者', mid: 2 }, content: { message: '热门评论' } }], page: { count: 2 },
+  } };
   if (u.includes('web-dynamic/v1/feed/all')) return { code: 0, data: { update_baseline: '1000', items: feedItems(), has_more: false, offset: '' } };
   if (u.includes('web-dynamic/v1/feed/space')) return { code: 0, data: { items: feedItems(), offset: '', has_more: false } };
   if (u.includes('web-dynamic/v1/portal')) return { code: 0, data: { up_list: { items: P.slice(0, 12).map((v, i) => ({ mid: v.mid, uname: v.name, face: v.face, has_update: i % 3 === 0 })) }, live_users: { count: 2, items: P.slice(12, 14).map((v, i) => ({ mid: v.mid, uname: v.name, face: v.face, title: ['今晚通宵剪片', '字体设计直播'][i], room_id: 1000 + i })) } } };
@@ -198,11 +215,11 @@ ${[['like', '3.3万'], ['coin', '2656'], ['favorite', '1.8万'], ['forward', '17
 }
 
 /** 给 BrowserContext 装上离线路由 */
-export async function installMocks(ctx) {
+export async function installMocks(ctx, override) {
   await ctx.route(/^https?:\/\//, async (route) => {
     const req = route.request();
     const u = req.url();
-    const body = apiBody(u);
+    const body = (await override?.(u)) ?? apiBody(u);
     const origin = req.headers().origin || 'https://www.bilibili.com';
     if (body) return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': origin, 'access-control-allow-credentials': 'true' }, body: JSON.stringify(body) });
     const type = req.resourceType();

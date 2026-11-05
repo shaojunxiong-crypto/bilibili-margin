@@ -1,4 +1,5 @@
 import { loadSettings, onSettingsChange } from '../../shared/settings';
+import { openBili } from '../navigation';
 import { forgetSearch, hotSearch, rememberSearch, searchHistory, searchUrl, suggest } from '../api/search';
 import { h, highlight, icon, ICONS } from './dom';
 
@@ -46,7 +47,7 @@ export function createCommandPalette(commands: Command[]): Palette {
   let timer = 0;
   let lastFocus: Element | null = null;
 
-  const go = (q: string) => { rememberSearch(q); window.open(searchUrl(q), '_blank', 'noopener'); close(); };
+  const go = (q: string) => { rememberSearch(q); openBili(searchUrl(q)); close(); };
   const searchRow = (q: string, kind: 'history' | 'hot' | 'sugg', html?: string, n?: number): Row => ({
     id: `${kind}:${q}`, title: q, titleHtml: html, cat: '搜索',
     icon: kind === 'history' ? ICONS.history : ICONS.search,

@@ -1,0 +1,14 @@
+/* 不改变旧版布局；可选强调色统一主要操作，经典模式沿用原有颜色。 */
+.app :is(.upload,.hs-btn,.sp-msave,.sp-follow:not(.on),.wh-send,.fd-post,.dy-send,.ms-act,.data-acts .primary) {
+  background:var(--margin-primary,var(--ink));color:var(--margin-primary-fg,var(--canvas));
+}
+/* 小控件使用同一档磨砂；大抽屉保持实底，避免视频底图导致整块反复模糊。 */
+.app[data-glass="soft"] :is(.idcl-card,.cp-panel,.gf-menu,.dp) {
+  backdrop-filter:blur(16px) saturate(1.1);
+}
+.app[data-glass="soft"] :is(.search,.et) {
+  background:color-mix(in srgb,var(--surface) 74%,transparent);
+}
+@media(prefers-reduced-transparency:reduce) {
+  .app[data-glass="soft"] :is(.idcl-card,.cp-panel,.gf-menu,.dp,.search,.et) { backdrop-filter:none!important;background:var(--surface); }
+}

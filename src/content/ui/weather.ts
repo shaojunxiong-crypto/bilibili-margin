@@ -1,7 +1,8 @@
 import { every } from '../sched';
 import { introActive } from './intro/gate';
 import { appendMarkup, h } from './dom';
-import { weather, geocode, setLoc, savedLoc, type Wx } from '../api/weather';
+import { weather, setLoc, savedLoc, type Wx } from '../api/weather';
+import { createCityPicker } from './city-picker';
 import { WEATHER_SKIES, WEATHER_SKY_LAYERS, moonAge, weatherScene, glyphSvg, SKY_PITCH, FRAME } from './dotsky';
 import { onMotionChange, reducedMotion } from '../motion';
 
@@ -80,35 +81,33 @@ export function createWeather(): HTMLElement {
   onMotionChange(run);
   addEventListener('margin:wx-loc', () => load());
 
+  let closeCity: (() => void) | null = null;
   const editCity = (place: HTMLElement) => {
-    const input = h('input', { class: 'wx-city-in', value: wx?.loc.name ?? '', 'aria-label': '城市', placeholder: '输入城市' }) as HTMLInputElement;
-    const done = async (ok: boolean) => {
-      const q = input.value.trim();
-      if (ok && q && q !== wx?.loc.name) {
-        input.disabled = true;
-        try {
-          const loc = await geocode(q);
-          if (loc) { setLoc(loc); load(); return; }
-          input.disabled = false; input.select(); input.classList.add('bad'); return;
-        } catch { /* 网络失败就恢复原样 */ }
-      }
-      input.replaceWith(place);
-    };
-    input.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') done(true); if (e.key === 'Escape') done(false); });
-    input.addEventListener('blur', () => done(true));
-    place.replaceWith(input);
-    input.focus(); input.select();
+    closeCity?.();
+    const picker = createCityPicker(loc => { closeCity?.(); setLoc(loc); });
+    picker.el.classList.add('wx-city-picker');
+    picker.input.value = wx?.loc.name ?? '';
+    closeCity = () => { closeCity = null; picker.cancel(); picker.el.remove(); };
+    picker.el.addEventListener('keydown', event => {
+      if (event.key === 'Escape') { closeCity?.(); place.focus(); }
+    });
+    picker.el.addEventListener('focusout', event => {
+      if (!(event.relatedTarget instanceof Node) || !picker.el.contains(event.relatedTarget)) closeCity?.();
+    });
+    el.append(picker.el);
+    picker.input.focus(); picker.input.select();
   };
 
   const render = () => {
     if (!wx) return;
+    closeCity?.();
     const w = wx;
     const sky = h('div', { class: 'wx-sky', role: 'img', 'aria-label': `${w.loc.name}：${w.condition}，${deg(w.temp)}` },
       svg,
       h('div', { class: 'wx-now' },
         h('span', { class: 'wx-temp' }, deg(w.temp)),
         h('span', { class: 'wx-cond' }, w.condition)));
-    const place = h('button', { class: 'wx-city', type: 'button', title: '点击更换城市' }, w.loc.name);
+    const place = h('button', { class: 'wx-city', type: 'button', title: [w.loc.region, '点击更换城市'].filter(Boolean).join(' · ') }, w.loc.name);
     place.onclick = () => editCity(place);
     clockEl.textContent = clock();
     const hours = h('ol', { class: 'wx-hours', 'aria-label': '未来几个时段' },
@@ -152,13 +151,17 @@ export function createWeather(): HTMLElement {
     run();
   };
 
-  let tries = 0;
-  const load = (quiet = false) => {
+  let loadSequence = 0, retryTimer = 0;
+  const load = (quiet = false, retry = 0) => {
+    const request = ++loadSequence;
+    clearTimeout(retryTimer);
     if (!quiet) fetchedAt = Date.now();
-    weather().then((x) => { wx = x; render(); }).catch((err) => {
+    weather().then((x) => { if (request === loadSequence) { wx = x; render(); } }).catch((err) => {
+      if (request !== loadSequence) return;
       console.warn('[margin] weather', err);
       if (quiet && wx) return; // 后台刷新失败：保留旧数据
-      if (tries++ < 2) { setTimeout(load, 4000 * tries); return; }
+      if (retry < 2) { retryTimer = window.setTimeout(() => load(quiet, retry + 1), 4000 * (retry + 1)); return; }
+      closeCity?.();
       el.replaceChildren(h('p', { class: 'wx-empty', title: String(err) }, `天气暂时取不到${savedLoc()?.name ? `（${savedLoc()!.name}）` : ''}`));
     });
   };

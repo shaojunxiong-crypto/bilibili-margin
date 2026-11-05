@@ -35,7 +35,7 @@ const SKINS: Record<string, string> = {
     #pub button { border-radius: 999px !important; padding: 0 18px !important; }
   `,
   'bili-comment-rich-textarea': `
-    #input, .brt-root, .brt-editor { background: transparent !important; color: var(--m-ink) !important; font-size: 14px !important; line-height: 1.6 !important; }
+    #input, .brt-root, .brt-editor { background: transparent !important; color: var(--m-ink) !important; font-size:var(--margin-cfs,14px)!important;line-height:1.6!important; }
     .brt-placeholder, [data-placeholder]::before { color: var(--m-faint) !important; }
   `,
 };
@@ -51,6 +51,7 @@ function skin(root: ParentNode, depth = 0): void {
     const sr = el.shadowRoot;
     if (!sr) continue;
     const tag = el.tagName.toLowerCase();
+    if (tag === 'bili-comment-replies-renderer') watchReplies(sr);
     // tag 位于每条评论自己的嵌套 Shadow DOM；主题规则需要注入到包含它的那一层。
     const css = (SKINS[tag] ?? '') + TAG_SKIN + (extra[tag] ?? '');
     if (!done.has(sr)) {
@@ -75,7 +76,20 @@ export function skinComments(more: Record<string, string> = {}): void {
   extra = more;
   loadSettings().then((st) => { treeOn = st.replyTree; run(); }).catch(() => {});
   onSettingsChange((st) => { if (st.replyTree !== treeOn) { treeOn = st.replyTree; retreeAll(); } });
-  const run = () => { const bc = document.querySelector('bili-comments'); if (bc) { skin(bc.parentElement ?? document); tree(bc); } treeOld(); };
+  const containers = new WeakSet<Element>();
+  let updateFrame = 0;
+  const run = () => {
+    const bc = document.querySelector('bili-comments');
+    if (bc) { skin(bc.parentElement ?? document); tree(bc); }
+    treeOld();
+    const container = document.querySelector('#commentapp, .comment-container');
+    if (container && !containers.has(container)) {
+      containers.add(container);
+      new MutationObserver(() => {
+        if (!updateFrame) updateFrame = requestAnimationFrame(() => { updateFrame = 0; run(); });
+      }).observe(container, { childList: true, subtree: true });
+    }
+  };
   // 前 90 秒每秒补一次（评论区是懒加载的 Web Components）；页面隐藏时暂停
   let n = 0;
   const stop = every(1000, () => { run(); if (++n > 90) stop(); });
@@ -91,6 +105,7 @@ export function skinComments(more: Record<string, string> = {}): void {
  */
 let treeOn = true;
 const TREE_CSS = `
+  #expander-contents[hidden], #expander-contents[data-margin-replies-collapsed] { display: none !important; }
   #expander-contents { display: flex !important; flex-direction: column !important; }
   #expander-contents > #expander-footer { order: 99999 !important; }
   bili-comment-reply-renderer[data-m-depth] { --m-tl: color-mix(in srgb, var(--m-ink, #888) 18%, transparent); }
@@ -152,6 +167,7 @@ function nest(reps: HTMLElement[], info: { name: string; to: string }[]): void {
  * v0.49 的对话树只认 bili-comments，这些用户开了也没效果。老评论在普通 DOM 里，直接按同样规则排。
  */
 const OLD_CSS = `
+  .sub-reply-list[hidden], .sub-reply-list[data-margin-replies-collapsed], .sub-reply-list.m-tree[data-margin-replies-collapsed] { display: none !important; }
   .sub-reply-list.m-tree { display: flex !important; flex-direction: column !important; }
   .sub-reply-list.m-tree > :not(.sub-reply-item) { order: 99999 !important; }
   .sub-reply-item[data-m-depth] { --m-tl: color-mix(in srgb, var(--m-ink, #888) 18%, transparent); background-repeat: no-repeat !important; }
@@ -169,7 +185,7 @@ function treeOld(): void {
     oldSeen.add(l);
     treeLists.add(l);
     let raf = 0;
-    const kick = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; layoutOld(l); }); };
+    const kick = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; layoutOld(l); replyCollapse(l); }); };
     new MutationObserver(kick).observe(l, { childList: true });
     kick();
   }
@@ -193,18 +209,53 @@ function layoutOld(l: HTMLElement): void {
 function tree(bc: Element): void {
   const root = bc.shadowRoot;
   if (!root) return;
-  if (!treeSheet) { treeSheet = new CSSStyleSheet(); treeSheet.replaceSync(TREE_CSS); }
   for (const t of root.querySelectorAll('bili-comment-thread-renderer')) {
     const sr = t.shadowRoot?.querySelector('bili-comment-replies-renderer')?.shadowRoot;
-    if (!sr || treeSeen.has(sr)) continue;
-    treeSeen.add(sr);
-    treeRoots.add(sr);
-    sr.adoptedStyleSheets = [...sr.adoptedStyleSheets, treeSheet];
-    let raf = 0;
-    const kick = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; layout(sr); }); };
-    new MutationObserver(kick).observe(sr, { childList: true, subtree: true });
-    kick();
+    if (sr) watchReplies(sr);
   }
+}
+
+function watchReplies(sr: ShadowRoot): void {
+  if (treeSeen.has(sr)) return;
+  treeSeen.add(sr); treeRoots.add(sr);
+  if (!treeSheet) { treeSheet = new CSSStyleSheet(); treeSheet.replaceSync(TREE_CSS); }
+  sr.adoptedStyleSheets = [...sr.adoptedStyleSheets, treeSheet];
+  let raf = 0;
+  const kick = () => { if (!raf) raf = requestAnimationFrame(() => {
+    raf = 0; layout(sr);
+    const contents = sr.querySelector<HTMLElement>('#expander-contents');
+    if (contents) replyCollapse(contents);
+  }); };
+  new MutationObserver(kick).observe(sr, { childList: true, subtree: true });
+  kick();
+}
+
+const replyControls = new WeakMap<HTMLElement, HTMLButtonElement>();
+/** 只折叠现有 DOM，保留原生分页、输入框和 lit 的节点归属。 */
+function replyCollapse(list: HTMLElement): void {
+  let button = replyControls.get(list);
+  const hasReplies = !!list.querySelector('bili-comment-reply-renderer, .sub-reply-item');
+  if (!hasReplies) { if (button) { button.hidden = true; button.style.display = 'none'; } return; }
+  if (!button) {
+    button = document.createElement('button');
+    button.type = 'button'; button.className = 'margin-replies-toggle';
+    button.style.cssText = 'display:block;position:sticky;top:80px;z-index:2;margin:8px 0;padding:6px 12px;border:0;border-radius:999px;'
+      + 'background:var(--m-surface,#fff);color:var(--m-muted,#666);font:500 12px/1.5 var(--m-sans,system-ui);cursor:pointer;scroll-margin-top:88px';
+    button.textContent = '收起回复'; button.setAttribute('aria-expanded', 'true');
+    button.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const collapsed = list.toggleAttribute('data-margin-replies-collapsed');
+      button!.textContent = collapsed ? '展开回复' : '收起回复';
+      button!.setAttribute('aria-expanded', String(!collapsed));
+      button!.scrollIntoView({ block: 'nearest' });
+    });
+    replyControls.set(list, button);
+  }
+  if (button.nextElementSibling !== list) list.before(button);
+  // 原生尚未展开时不显示扩展按钮；我们自己折叠后仍保留重开入口。
+  const visible = list.hasAttribute('data-margin-replies-collapsed') || getComputedStyle(list).display !== 'none';
+  button.style.display = visible ? 'block' : 'none';
+  button.hidden = !visible;
 }
 
 function retreeAll(): void {

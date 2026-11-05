@@ -1,5 +1,5 @@
 import { activeOf, backfill, dayKey, firstOf, levelOf, levelThresholds, loadActivity, secondsOf, sourceOf, type Activity, type DayRecord } from '../footprint/store';
-import { h, icon } from './dom';
+import { h, icon, ICONS } from './dom';
 import { every } from '../sched';
 
 /** 时长来源：本机后台计时 / B 站观看历史估算 */
@@ -15,7 +15,6 @@ const BF_KEY = 'margin:activity-bf';
 const VIEW_KEY = 'margin:fp-view';
 const MONTH_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WEEK_1 = ['日', '一', '二', '三', '四', '五', '六'];
-const CHEV_L = '<path d="m14.5 6-6 6 6 6"/>', CHEV_R = '<path d="m9.5 6 6 6-6 6"/>';
 
 function smoothWheelScroll(strip: HTMLElement) {
   let target: number | null = null, frame = 0, scrollBehavior = '';
@@ -250,8 +249,8 @@ export function createFootprintCard(): HTMLElement {
       h('div', { class: 'fp-mhead' },
         h('p', { class: 'fp-mname' }, h('span', { class: 'en' }, MONTH_EN[m]), h('small', {}, `${y} 年 ${m + 1} 月`)),
         h('div', { class: 'fp-mnav' },
-          h('button', { type: 'button', 'aria-label': '上个月', disabled: prevOff, onclick: () => go(-1) }, icon(CHEV_L)),
-          h('button', { type: 'button', 'aria-label': '下个月', disabled: nextOff, onclick: () => go(1) }, icon(CHEV_R)))),
+          h('button', { type: 'button', 'aria-label': '上个月', disabled: prevOff, onclick: () => go(-1) }, icon(ICONS.back)),
+          h('button', { type: 'button', 'aria-label': '下个月', disabled: nextOff, onclick: () => go(1) }, icon(ICONS.chevronRight)))),
       strip);
   }
   return el;

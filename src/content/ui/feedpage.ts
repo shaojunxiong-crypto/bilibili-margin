@@ -11,6 +11,7 @@ import { cachedTags } from '../tags';
 import { fmtCount, h, icon, ICONS } from './dom';
 import { PageShell } from './shell';
 import { targetOfDyn } from '../filter-targets';
+import { reducedMotion } from '../motion';
 
 const TYPES: [FeedType, string][] = [['all', '全部'], ['video', '视频投稿'], ['pgc', '追番追剧'], ['article', '专栏']];
 const ext = { target: '_blank', rel: 'noopener' };
@@ -55,7 +56,7 @@ export class FeedApp {
       b.dataset.tab = id;
       return b;
     }));
-    const post = h('a', { class: 'fd-post', href: 'https://t.bilibili.com/?margin=off', title: '在 B 站原版里发动态' }, icon('<path d="M12 5v14M5 12h14"/>'), h('span', {}, '发动态'));
+    const post = h('a', { class: 'fd-post', href: 'https://t.bilibili.com/?margin=off', title: '在 B 站原版里发动态' }, icon(ICONS.plus), h('span', {}, '发动态'));
     this.list = h('div', { class: 'dy-list fd-list' });
     attachPreview(this.list, () => this.shell.settings.hoverPreview);
     this.status = h('div', { class: 'status' });
@@ -176,11 +177,21 @@ export class FeedApp {
     // v0.49：不再只取前 30 个（关注多的人翻不到，B 站评论反馈）；可在自己的关注里搜昵称；滚轮横向翻
     const all = mk(0, '全部动态', h('span', { class: 'fd-up-all' }, icon(ICONS.moments)));
     const row = h('div', { class: 'fd-ups-row' });
+    const move = (direction: number) => row.scrollBy({ left: direction * row.clientWidth * .8, behavior: reducedMotion() ? 'instant' : 'smooth' });
+    const prev = h('button', { class: 'fd-ups-scroll', type: 'button', 'aria-label': '向左滚动关注列表', onclick: () => move(-1) }, icon(ICONS.back));
+    const next = h('button', { class: 'fd-ups-scroll', type: 'button', 'aria-label': '向右滚动关注列表', onclick: () => move(1) }, icon(ICONS.chevronRight));
+    const updateScroll = () => {
+      prev.disabled = row.scrollLeft <= 1;
+      next.disabled = row.scrollLeft + row.clientWidth >= row.scrollWidth - 1;
+    };
+    row.addEventListener('scroll', updateScroll, { passive: true });
+    new ResizeObserver(updateScroll).observe(row);
     const sorted = [...ups].sort((x, y) => Number(y.fresh) - Number(x.fresh));
     const paint = (list: Up[], empty = '') => {
       row.replaceChildren(...list.map((u) => mk(u.mid, u.name, face(u.face, '', 96), u.fresh)));
       if (!list.length && empty) row.append(h('span', { class: 'fd-ups-empty' }, empty));
       row.scrollLeft = 0;
+      updateScroll();
     };
     const input = h('input', { class: 'fd-ups-q', type: 'search', placeholder: '搜索', 'aria-label': '在关注里搜 UP 主' }) as HTMLInputElement;
     let qt = 0, seq = 0, me = 0;
@@ -207,7 +218,7 @@ export class FeedApp {
       row.scrollLeft += e.deltaY;
     }, { passive: false });
     paint(sorted);
-    this.strip.replaceChildren(all, search, row);
+    this.strip.replaceChildren(all, search, prev, row, next);
   }
 
   private async renderHot(right: HTMLElement): Promise<void> {

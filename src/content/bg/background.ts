@@ -33,6 +33,14 @@ export class BackgroundLayer {
     this.el.append(this.canvas, this.img, h('div', { class: 'bg-scrim' }));
     // #31：设置没变时 chrome.storage.onChanged 不会触发，换图后得靠这个事件立刻重读到新图
     addEventListener('margin:bg-image', () => this.reloadImage());
+    addEventListener('margin:bg-intensity', (e) => {
+      const value = (e as CustomEvent<number>).detail;
+      if (!this.cfg || !Number.isFinite(value) || value < 0 || value > 1) return;
+      // 滑杆拖动只预览强度，不触发存储写入和整份设置面板同步；松手后再保存。
+      this.cfg = { ...this.cfg, intensity: value };
+      this.el.style.setProperty('--bg-o', String(value));
+      if (this.lensEl) this.redraw();
+    });
     document.addEventListener('visibilitychange', () => (document.hidden ? this.stop() : this.loop()));
     new ResizeObserver(([e]) => { this.size = { w: e.contentRect.width, h: e.contentRect.height }; this.resize(); }).observe(this.el);
     onMotionChange(() => {
@@ -300,8 +308,7 @@ export class BackgroundLayer {
   private fastRun = 0;
 
   /**
-   * 暂停原因（v0.43）：播放视频、全屏等场景；只要还有一个原因在，背景就停在当前帧。
-   * 背景停着，上面那些毛玻璃也就不用每帧重算模糊。
+   * 全屏等背景不可见的场景暂停；可见时播放、滚动和抽屉不暂停背景。
    */
   private holds = new Set<string>();
   hold(reason: string, on: boolean): void {
@@ -327,7 +334,8 @@ export class BackgroundLayer {
         const t0 = performance.now();
         this.draw(now);
         const cost = performance.now() - t0;
-        if (gap < 200 && (cost > 6 || gap > this.frameMs * 1.8)) this.slow++; else this.slow = Math.max(0, this.slow - 0.25);
+        // 主动 30fps 上限带来的间隔不是掉帧，不应把自适应档位也降到 30fps。
+        if (gap < 200 && (cost > 6 || gap > Math.max(this.frameMs, this.capMs) * 1.8)) this.slow++; else this.slow = Math.max(0, this.slow - 0.25);
         if (this.slow > 30 && this.frameMs < 30) { this.frameMs = 1000 / 30; this.slow = 0; }
         else if (this.frameMs > 30 && this.slow === 0 && gap < 40) { this.fastRun++; if (this.fastRun > 600) { this.frameMs = 1000 / 60; this.fastRun = 0; } }
         else this.fastRun = 0;

@@ -98,6 +98,10 @@
 .upload { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 16px 0 12px; border-radius: 999px; background: var(--ink); color: var(--canvas);
   font-size: 13px; font-weight: 600; letter-spacing: .06em; box-shadow: var(--sh-xs); transition: opacity .15s var(--ease-out); }
 .upload:hover { opacity: .86; }
+.upload[hidden] { display: none; }
+@media (max-width: 1279px) {
+  .top { grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; }
+}
 .upload svg { width: 17px; height: 17px; }
 .um-wrap { position: relative; display: flex; }
 .um-wrap .user { margin-left: 0; }
@@ -172,6 +176,7 @@
 .dash { display: grid; grid-template-columns: 1216px minmax(0, 1fr); gap: 16px; margin-top: 24px; align-items: stretch; }
 .dash > .fp-card { margin-top: 0; min-width: 0; }
 .dash[hidden] { display: none; }
+.dash:has(> .fp-card:only-child) { grid-template-columns: minmax(0, 1fr); }
 /* 只留天气（足迹关掉）：天气卡保持 480 × 240，靠左 */
 .dash:has(> .wx:only-child) { grid-template-columns: minmax(0, 480px); }
 .dash > .wx:only-child { height: 240px; }
@@ -203,11 +208,12 @@
 .wx-side { min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 8px; }
 .wx-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .wx-place { min-width: 0; display: grid; gap: 2px; }
-.wx-city, .wx-city-in { all: unset; font: 600 14px/1.3 var(--sans); color: var(--ink); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 6px; }
+.wx-city { all: unset; font: 600 14px/1.3 var(--sans); color: var(--ink); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 6px; }
 .wx-city:hover { color: var(--accent); }
 .wx-city:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.wx-city-in { width: 100%; cursor: text; box-shadow: 0 0 0 1px var(--line); padding: 0 6px; margin-left: -6px; }
-.wx-city-in.bad { box-shadow: 0 0 0 1px #e5484d; }
+.wx:has(.wx-city-picker) { z-index: 5; }
+.wx .wx-city-picker { position: absolute; top: 12px; right: 12px; width: min(340px, calc(100% - 24px)); padding: 10px; border-radius: 14px; background: var(--surface); box-shadow: var(--ring), var(--sh-md); }
+.wx-city-picker .city-list { max-height: 240px; overflow-y: auto; }
 .wx-place small { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wx-live { flex: none; display: flex; align-items: center; gap: 6px; font: 500 10px/1 var(--mono); letter-spacing: .08em; color: var(--muted); }
 .wx-led { width: 6px; height: 6px; border-radius: 50%; background: #30a46c; box-shadow: 0 0 0 2px rgb(48 164 108 / .18); }
@@ -241,6 +247,7 @@
 .idcl-chain { position: absolute; inset: 0; pointer-events: none; }
 .idcl-card { position: absolute; left: 0; top: 0; will-change: transform; width: 236px; aspect-ratio: 236 / 460; perspective: 1400px; cursor: grab; touch-action: none; user-select: none; transform-origin: 50% 20.5px; pointer-events: auto; }
 .idcl-card:active { cursor: grabbing; }
+.idcl-card :is(a, button) { cursor: pointer; }
 .idcl-flipper { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; }
 .idcl-face { position: absolute; inset: 0; border-radius: 18px; padding: 16px 16px 14px; display: flex; flex-direction: column; backface-visibility: hidden; color: var(--idcl-card-ink);
   box-shadow: 0 32px 60px -16px rgba(0,0,0,.6), 0 10px 20px -8px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.65), inset 0 0 0 1px rgba(0,0,0,.05); }
@@ -393,13 +400,13 @@
 /* 设置：天气城市（#3） */
 .city-box { position: relative; display: grid; gap: 8px; }
 .city-row { display: flex; gap: 8px; }
-.city-in { flex: 1; height: 36px; padding: 0 12px; border: 0; border-radius: 10px; background: var(--chip); color: var(--ink); font: inherit; font-size: 14px; box-shadow: var(--ring); outline: none; transition: box-shadow 150ms var(--ease-out); }
+.city-in { flex: 1; min-width: 0; height: 36px; padding: 0 12px; border: 0; border-radius: 10px; background: var(--chip); color: var(--ink); font: inherit; font-size: 14px; box-shadow: var(--ring); outline: none; transition: box-shadow 150ms var(--ease-out); }
 .city-in:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 .city-auto { height: 36px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--chip); color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; box-shadow: var(--ring); }
 .city-auto:hover { color: var(--ink); }
 .city-list { list-style: none; margin: 0; padding: 4px; border-radius: 12px; background: var(--surface, var(--chip)); box-shadow: var(--ring), var(--sh-md); display: grid; gap: 2px; }
 .city-list[hidden] { display: none; }
-.city-list li { display: flex; align-items: baseline; gap: 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+.city-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 14px; }
 .city-list li small { font-size: 12px; color: var(--muted); }
 .city-list li:hover, .city-list li:focus-visible { background: var(--chip); outline: none; }
 .city-list li.empty { color: var(--muted); cursor: default; }
@@ -437,6 +444,9 @@
 /* ===== v0.43 首页部件显隐（设置 → 首页组件） ===== */
 .app.home[data-hide~="search"] :is(.hs-slot, .hero-search, .hs-scrim) { display: none; }
 .app.home[data-hide~="date"] .bar .eyebrow { display: none; }
+/* 保留展开分类栏的占位，避免短列表底部收缩时滚动被夹回吸顶阈值，反复切换 stuck。 */
+.app.home .bar { min-height: calc(24px + 18px + 16px + 24px * 1.2 + 8px + 16px); }
+.app.home[data-hide~="date"] .bar { min-height: calc(24px + 24px * 1.2 + 8px + 16px); }
 .app.home[data-hide~="refresh"] .bar .refresh { display: none; }
 .pills { display: flex; flex-wrap: wrap; gap: 8px; }
 .pill { height: 32px; padding: 0 12px; border-radius: 10px; font-size: 13px; color: var(--muted); background: var(--chip); box-shadow: inset 0 0 0 1px transparent;
@@ -490,6 +500,7 @@
 .hl-mv { width: 28px; height: 28px; border-radius: 8px; color: var(--muted); display: grid; place-items: center; font-size: 14px; }
 .hl-mv:hover:not(:disabled) { background: var(--surface); color: var(--ink); }
 .hl-mv:disabled { opacity: .3; cursor: default; }
+.hl-mv svg, .home-order-btn svg { width: 14px; height: 14px; }
 .hl-sep { height: 1px; margin: 4px 8px; background: var(--line); }
 /* v0.47.1：内容缩放（设置「内容缩放」→ html --margin-zoom）；吸顶偏移按缩放折回，保持贴着顶栏 */
 .main { zoom: var(--margin-zoom, 1); }
@@ -516,6 +527,7 @@
 .sd-t { flex: none; }
 .sd-sum { flex: 1; min-width: 0; text-align: right; font: 400 12px/1.3 var(--sans); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sd-chev { flex: none; display: grid; width: 16px; height: 16px; color: var(--muted); transition: transform 200ms var(--ease-out); }
+.sd-chev svg { display: block; width: 16px; height: 16px; }
 .sd[data-open] .sd-chev { transform: rotate(180deg); }
 .sd-panel { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 300ms var(--ease-out); }
 .sd[data-open] .sd-panel { grid-template-rows: 1fr; }
@@ -575,5 +587,9 @@
 /* 上一批（v0.48） */
 .bar-acts { display: flex; align-items: center; gap: 8px; }
 .bar .refresh.back[hidden] { display: none; }
+/* 换一批进行中：按钮转圈，旧列表留在原位直到新一批就绪（减少动画时保持静止） */
+.bar .refresh[aria-busy="true"] { pointer-events: none; opacity: .7; }
+.bar .refresh[aria-busy="true"] svg { animation: refresh-spin .9s linear infinite; }
+@keyframes refresh-spin { to { transform: rotate(360deg); } }
 .card:hover .coop, .card:focus-within .coop { opacity: 0; }
 .coop { transition: opacity 150ms var(--ease-out); }

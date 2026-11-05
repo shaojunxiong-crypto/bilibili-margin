@@ -84,11 +84,19 @@ export function attachGlass(el: HTMLElement, filters: SVGSVGElement, o: GlassOpt
   filters.append(f);
 
   let url = '', lastKey = '', timer = 0, building = false;
+  const de = document.documentElement;
+  const transparency = matchMedia('(prefers-reduced-transparency: reduce)');
+  let liquid = de.dataset.marginGlass === 'liquid' && !transparency.matches;
+  const paint = () => {
+    el.style.backdropFilter = transparency.matches ? 'none' : liquid && url
+      ? `blur(${o.blur ?? 6}px) url(#${id}) saturate(${o.sat ?? '150%'})`
+      : el.classList.contains('et-thumb') ? 'none' : 'blur(16px) saturate(110%)';
+  };
   // 尺寸来自 ResizeObserver 的 borderBoxSize，不读 offsetWidth（避免强制布局）
   let W = 0, H = 0;
   const build = () => {
     const w = W, h = H;
-    if (w < 4 || h < 4) return;
+    if (!liquid || w < 4 || h < 4) return;
     const key = `${w}x${h}`;
     if (key === lastKey) return;
     lastKey = key;
@@ -96,17 +104,18 @@ export function attachGlass(el: HTMLElement, filters: SVGSVGElement, o: GlassOpt
     const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || h / 2;
     const bezel = Math.min(h / 2, w / 2, 22);
     void mapUrl(w, h, radius, bezel).then((u) => {
-      if (key !== lastKey) return;
       building = false;
+      if (!liquid || key !== lastKey) return;
       if (!u) return;
       url = u;
       img.setAttribute('href', url);
-      el.style.backdropFilter = `blur(${o.blur ?? 6}px) url(#${id}) saturate(${o.sat ?? '150%'})`;
+      paint();
     });
   };
   const resize = (en?: ResizeObserverEntry) => {
     const b = en?.borderBoxSize?.[0];
     if (b) { W = Math.round(b.inlineSize); H = Math.round(b.blockSize); }
+    if (!liquid) return;
     const w = W, h = H;
     if (w < 4 || h < 4) return;
     // Keep the existing map stretched with the control during its width animation.
@@ -118,6 +127,17 @@ export function attachGlass(el: HTMLElement, filters: SVGSVGElement, o: GlassOpt
     else if (`${w}x${h}` !== lastKey) timer = window.setTimeout(build, 80);
   };
   new ResizeObserver(([en]) => resize(en)).observe(el);
+  const sync = () => {
+    const next = de.dataset.marginGlass === 'liquid' && !transparency.matches;
+    if (next !== liquid) {
+      liquid = next;clearTimeout(timer);lastKey = '';building = false;
+      if (liquid) resize();
+    }
+    paint();
+  };
+  new MutationObserver(sync).observe(de,{attributes:true,attributeFilter:['data-margin-glass']});
+  transparency.addEventListener('change',sync);
+  paint();
 }
 
 /** 原版两张位移图（兜底 / 首帧），CSS 里可用 url(#lg-bar) / url(#lg-thumb) */

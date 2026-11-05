@@ -1,6 +1,6 @@
 /* 播放页顶栏：同一套 .app 变量，只占顶部 72px，抽屉仍覆盖全屏 */
 .app.wt { position: fixed; inset: 0 0 auto 0; height: 72px; overflow: visible; background: transparent; scrollbar-gutter: auto; }
-.app.wt .top { position: relative; background: color-mix(in srgb, var(--canvas) 80%, transparent); }
+.app.wt .top { position: relative; }
 
 /* ── 液态玻璃顶栏（21st「Apple Liquid glass switcher」原生移植）──
    顶栏本身不再铺底色/模糊（父级 backdrop-filter 会挡住子级的折射），
@@ -26,14 +26,11 @@
   transition: background-color .4s cubic-bezier(1, 0, .4, 1), box-shadow .4s cubic-bezier(1, 0, .4, 1);
 }
 .top, .app:not([data-bg="off"]) .top, .app.wt .top {
-  background: linear-gradient(color-mix(in srgb, var(--canvas) 86%, transparent), color-mix(in srgb, var(--canvas) 62%, transparent) 55%, transparent);
-  backdrop-filter: none; border-bottom: 0; background-repeat: no-repeat;
+  background: transparent; backdrop-filter: none; border-bottom: 0;
 }
-/* 滚动时内容从顶栏下穿过：渐进模糊 + 渐隐，让小电视、头像这些没有胶囊的元素也不压在标题上（风格审计 v0.39.1） */
-.top::before {
-  content: ""; position: absolute; inset: 0 0 -12px; z-index: -1; pointer-events: none;
-  backdrop-filter: blur(6px); -webkit-mask: linear-gradient(#000 45%, transparent); mask: linear-gradient(#000 45%, transparent);
-}
+/* 整条顶栏保持透明，避免图片背景和滚动内容上出现横向渐变 / 模糊分界。
+   搜索框和快捷入口胶囊各自保留玻璃效果。 */
+.top :is(.brand .tv,.hd-settings > svg) { filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--canvas) 80%, transparent)); }
 .et { position: relative; isolation: isolate; border-radius: 99em; padding: 4px 6px; gap: 6px; }
 .et-sep { background: color-mix(in srgb, var(--ink) 14%, transparent); }
 .et-btn { border-radius: 99em; color: color-mix(in srgb, var(--ink) 72%, transparent); }
@@ -49,7 +46,7 @@
     inset 0 1px 0 0 rgb(255 255 255 / .7),
     inset 0 -1px 1px 0 rgb(0 0 0 / .06),
     0 2px 6px -2px rgb(0 0 0 / .12);
-  opacity: 0; scale: .85; transition: opacity .3s var(--ease-out), scale .35s var(--ease-spring);
+  opacity: 0; scale: .97; transition: opacity 140ms var(--ease-out), scale 160ms var(--ease-out), translate 200ms var(--ease-out), width 200ms var(--ease-out);
 }
 .app[data-theme="dark"] .et-thumb {
   background: linear-gradient(180deg, rgb(255 255 255 / .12), rgb(255 255 255 / .03) 60%, rgb(255 255 255 / .06));
