@@ -101,9 +101,13 @@ export function createHeader(o: { tabs: TabItem[]; onTheme: () => void; onSearch
     userSlot.replaceWith(createUserMenu(a));
     // 消息中心里点开消息后（v0.46）重新拉一次未读，顶栏角标立刻跟上；关闭消息提醒时完全忽略
     let unreadT = 0;
-    addEventListener('margin:unread', () => {
+    addEventListener('margin:unread', (e) => {
       if (!msgOn) return;
-      clearTimeout(unreadT); unreadT = window.setTimeout(() => unreadTotal().then((n) => tabsNav.badge('msg', n)).catch(() => {}), 600);
+      clearTimeout(unreadT);
+      // 事件里带了刚取到的未读总数（下拉面板 / 消息页）：直接用，避免再发一次请求、口径或时点又对不上
+      const total = (e as CustomEvent<{ total?: number }>).detail?.total;
+      if (typeof total === 'number') { tabsNav.badge('msg', total); return; }
+      unreadT = window.setTimeout(() => unreadTotal().then((n) => tabsNav.badge('msg', n)).catch(() => {}), 600);
     });
     // 未读角标：页面可见时每 2 分钟问一次；切回标签页时立即刷新。
     // 消息提醒同时管动态：关闭后消息和动态的角标都不再轮询。
